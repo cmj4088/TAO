@@ -1,9 +1,9 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, net } = require("electron");
 const path = require("path");
 
 let mainWindow = null;
 
-function createWindow() {
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -18,9 +18,13 @@ function createWindow() {
     },
   });
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devUrl) {
-    mainWindow.loadURL(devUrl);
+  if (!app.isPackaged) {
+    const devUrl = "http://localhost:5173";
+    try {
+      await mainWindow.loadURL(devUrl);
+    } catch {
+      mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    }
   } else {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }

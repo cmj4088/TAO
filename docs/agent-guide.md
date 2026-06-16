@@ -79,16 +79,16 @@ TAO/
 
 ---
 
-## 4. 环境变量（仅此一个）
+## 4. 环境变量（无）
 
-| 变量名 | 取值 | 作用 | 设置位置 |
-|--------|------|------|----------|
-| `VITE_DEV_SERVER_URL` | `http://localhost:5173` | Electron 开发模式下加载 Vite dev server | `package.json` dev 脚本通过 `cross-env` 设置 |
+本项目不使用任何环境变量。Electron 通过 `app.isPackaged` 自动判断开发/生产模式：
+- 开发模式（`npm run dev`）：加载 `http://localhost:5173`
+- 生产模式（打包后）：加载 `dist/index.html`
 
 **规则**：
-- 前端不读取任何其他环境变量（没有 `.env` 文件）。
+- 前端不读取任何环境变量（没有 `.env` 文件）。
 - 后端不读取任何环境变量。
-- 新增功能不得引入新环境变量，如有必要必须先更新本文档。
+- 新增功能不得引入环境变量，如有必要必须先更新本文档。
 
 ---
 
@@ -212,7 +212,8 @@ npm run build        # tsc + vite build，输出到 dist/
 `npm run dev` 内部执行流程：
 1. `concurrently` 并行启动两个进程
 2. 进程 A：`vite` → 启动 Vite dev server 在 5173 端口
-3. 进程 B：`wait-on http://localhost:5173` → 等 Vite 就绪后 → `cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .`
+3. 进程 B：`wait-on http://localhost:5173` → 等 Vite 就绪后 → `electron .`
+4. Electron 主进程通过 `app.isPackaged` 判断为开发模式，自动加载 `http://localhost:5173`
 
 ---
 
@@ -274,7 +275,7 @@ const path = require("path");
 
 let mainWindow = null;
 
-function createWindow() {
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280, height: 800,
     minWidth: 960, minHeight: 600,
@@ -287,11 +288,15 @@ function createWindow() {
     },
   });
 
-  // 开发模式：读取环境变量 VITE_DEV_SERVER_URL
-  // 生产模式：加载 dist/index.html
-  const devUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devUrl) {
-    mainWindow.loadURL(devUrl);
+  // 开发模式：app.isPackaged 为 false，加载 Vite dev server
+  // 生产模式：app.isPackaged 为 true，加载 dist/index.html
+  if (!app.isPackaged) {
+    const devUrl = "http://localhost:5173";
+    try {
+      await mainWindow.loadURL(devUrl);
+    } catch {
+      mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    }
   } else {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
