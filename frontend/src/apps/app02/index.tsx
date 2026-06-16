@@ -275,21 +275,34 @@ const App02: React.FC = () => {
           {result.issues.length === 0 ? (
             <Alert type="success" showIcon message="未发现任何问题" />
           ) : (
-            result.issues.map((issue, idx) => (
+            (() => {
+              // 错误级优先，建议级靠后
+              const isError = (t: string) =>
+                t.includes("课时") || t.includes("转换");
+              const sorted = [...result.issues].sort((a, b) => {
+                const aErr = isError(a.type) ? 0 : 1;
+                const bErr = isError(b.type) ? 0 : 1;
+                return aErr - bErr;
+              });
+              return sorted.map((issue, idx) => {
+                const err = isError(issue.type);
+                return (
               <div
                 key={idx}
                 style={{
                   marginBottom: 12,
                   padding: 12,
-                  background: "#fff7e6",
-                  borderLeft: `4px solid ${getIssueColor(issue.type)}`,
+                  background: err ? "#fff2f0" : "#fafafa",
+                  borderLeft: `4px solid ${err ? "#ff4d4f" : "#d9d9d9"}`,
                   borderRadius: 4,
                 }}
               >
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                  <Tag color={issue.type.includes("课时") ? "red" : "orange"}>{issue.type}</Tag>
+                  <Tag color={err ? "red" : "default"}>{issue.type}</Tag>
                 </div>
-                <Text style={{ fontSize: 13 }}>{issue.detail}</Text>
+                <Text style={{ fontSize: 13, color: err ? "#cf1322" : undefined }}>
+                  {issue.detail}
+                </Text>
                 {issue.location && (
                   <div style={{ marginTop: 4 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
@@ -298,7 +311,9 @@ const App02: React.FC = () => {
                   </div>
                 )}
               </div>
-            ))
+                );
+              });
+            })()
           )}
         </div>
 
