@@ -79,3 +79,40 @@ export interface AiReviewResponse {
   configured: boolean;
   findings: AiReviewFinding[];
 }
+
+// ===== app02 文件审查类型 =====
+
+export interface ReviewIssue {
+  type: string;
+  detail: string;
+  location: string;
+  snippet: string;
+}
+
+export interface FileReviewResult {
+  file_id: string;
+  filename: string;
+  file_type: string;
+  teacher: string;
+  passed: boolean;
+  fonts_used: string[];
+  issues: ReviewIssue[];
+}
+
+export interface ReviewResponse {
+  mode: "single" | "batch";
+  results: FileReviewResult[];
+  summary: string;
+}
+
+export interface UploadedFileInfo {
+  file_id: string;
+  filename: string;
+  file_type: string;
+  is_doc: boolean;
+  converted: boolean;
+}
+
+export interface UploadResponse {
+  files: UploadedFileInfo[];
+}
