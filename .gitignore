@@ -1,0 +1,21 @@
+# Python 虚拟环境
+backend/venv/
+venv/
+__pycache__/
+*.pyc
+
+# 数据库文件
+*.db
+backend/data/
+
+# Node
+node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# 系统文件
+.DS_Store
+Thumbs.db
