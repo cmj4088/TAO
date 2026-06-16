@@ -1,7 +1,6 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Card,
-  Upload,
   Button,
   Table,
   Tabs,
@@ -11,18 +10,20 @@ import {
   Alert,
   Tooltip,
   Typography,
+  Modal,
 } from "antd";
 import {
-  UploadOutlined,
   PlayCircleOutlined,
   ExportOutlined,
   CheckCircleOutlined,
   InboxOutlined,
+  FileExcelOutlined,
+  DeleteOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { UploadFile } from "antd/es/upload";
 import client from "@/api/client";
-import type { ExamRow, TeacherInfo, AllocateResponse, ValidationError } from "@/types";
+import type { ExamRow, TeacherInfo, AllocateResponse, ValidationError, AiReviewFinding, AiReviewResponse } from "@/types";
 
 const { Title, Text } = Typography;
 
@@ -32,14 +33,175 @@ const App01: React.FC = () => {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("");
   const [dragSource, setDragSource] = useState<{
     rowIndex: number;
     field: string;
     teacher: string;
   } | null>(null);
+  const tabHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [aiConfigured, setAiConfigured] = useState(false);
+  const [aiFindings, setAiFindings] = useState<AiReviewFinding[]>([]);
+  const [aiReviewing, setAiReviewing] = useState(false);
+
+  // 页面加载时检查 AI 是否已配置
+  useEffect(() => {
+    client
+      .get("/api/app01/ai-review/status")
+      .then((res) => setAiConfigured(res.data.configured))
+      .catch(() => setAiConfigured(false));
+  }, []);
 
   const [examFile, setExamFile] = useState<File | null>(null);
   const [contactFile, setContactFile] = useState<File | null>(null);
+  const [examDragOver, setExamDragOver] = useState(false);
+  const [contactDragOver, setContactDragOver] = useState(false);
+  const examInputRef = useRef<HTMLInputElement>(null);
+  const contactInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileDrop = useCallback(
+    (file: File, target: "exam" | "contact") => {
+      if (!file.name.endsWith(".xlsx")) {
+        message.warning("只接受 .xlsx 文件");
+        return;
+      }
+      if (target === "exam") {
+        setExamFile(file);
+      } else {
+        setContactFile(file);
+      }
+    },
+    [],
+  );
+
+  const handleDragEvent = useCallback(
+    (e: React.DragEvent, target: "exam" | "contact", over: boolean) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (over) {
+        // 只接受单个文件
+        if (e.dataTransfer.items.length !== 1) return;
+        const item = e.dataTransfer.items[0];
+        if (item.kind !== "file") return;
+      }
+      if (target === "exam") {
+        setExamDragOver(over);
+      } else {
+        setContactDragOver(over);
+      }
+    },
+    [],
+  );
+
+  const handleZoneDrop = useCallback(
+    (e: React.DragEvent, target: "exam" | "contact") => {
+      e.preventDefault();
+      e.stopPropagation();
+      setExamDragOver(false);
+      setContactDragOver(false);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 1) {
+        message.warning("每次只能拖入 1 个文件");
+        return;
+      }
+      if (files.length === 0) return;
+      handleFileDrop(files[0], target);
+    },
+    [handleFileDrop],
+  );
+
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>, target: "exam" | "contact") => {
+      const files = Array.from(e.target.files || []);
+      if (files.length > 1) {
+        message.warning("每次只能选择 1 个文件");
+        e.target.value = "";
+        return;
+      }
+      if (files.length === 0) return;
+      handleFileDrop(files[0], target);
+      e.target.value = "";
+    },
+    [handleFileDrop],
+  );
+
+  const renderDropZone = (
+    target: "exam" | "contact",
+    file: File | null,
+    dragOver: boolean,
+    label: string,
+    description: string,
+  ) => {
+    const inputRef = target === "exam" ? examInputRef : contactInputRef;
+    const borderColor = dragOver ? "#1677ff" : file ? "#52c41a" : "#d9d9d9";
+    const bgColor = dragOver ? "#e6f4ff" : file ? "#f6ffed" : "#fafafa";
+
+    return (
+      <div
+        onDrop={(e) => handleZoneDrop(e, target)}
+        onDragOver={(e) => handleDragEvent(e, target, true)}
+        onDragLeave={(e) => handleDragEvent(e, target, false)}
+        onClick={() => inputRef.current?.click()}
+        style={{
+          flex: 1,
+          border: `2px dashed ${borderColor}`,
+          borderRadius: 8,
+          padding: file ? "12px 16px" : "24px 16px",
+          textAlign: "center",
+          cursor: "pointer",
+          background: bgColor,
+          transition: "all 0.2s",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: 80,
+        }}
+      >
+        {file ? (
+          <Space>
+            <FileExcelOutlined style={{ fontSize: 20, color: "#52c41a" }} />
+            <Text strong style={{ fontSize: 14 }}>
+              {file.name}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              ({(file.size / 1024).toFixed(1)} KB)
+            </Text>
+            <Button
+              type="text"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (target === "exam") setExamFile(null);
+                else setContactFile(null);
+              }}
+            />
+          </Space>
+        ) : (
+          <div>
+            <InboxOutlined style={{ fontSize: 28, color: "#1677ff", marginBottom: 8 }} />
+            <div>
+              <Text strong>{label}</Text>
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {description}
+              </Text>
+            </div>
+          </div>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".xlsx"
+          style={{ display: "none" }}
+          onChange={(e) => handleFileSelect(e, target)}
+        />
+      </div>
+    );
+  };
 
   const doUploadBoth = useCallback(async () => {
     if (!examFile || !contactFile) {
@@ -75,17 +237,37 @@ const App01: React.FC = () => {
     }
     setLoading(true);
     try {
-      const res = await client.post<AllocateResponse>("/api/app01/allocate", {
+      const allocateRes = await client.post<AllocateResponse>("/api/app01/allocate", {
         exam_rows: examRows,
         teachers,
       });
-      setExamRows(res.data.exam_rows);
-      setWarnings(res.data.warnings);
-      setErrors([]);
-      if (res.data.warnings.length > 0) {
-        message.warning(`分配完成，但有 ${res.data.warnings.length} 条警告`);
-      } else {
-        message.success("分配完成，无警告");
+      setExamRows(allocateRes.data.exam_rows);
+      setWarnings(allocateRes.data.warnings);
+      setAiFindings([]);
+
+      // 分配后自动校验
+      try {
+        const validateRes = await client.post("/api/app01/validate", {
+          exam_rows: allocateRes.data.exam_rows,
+          teachers,
+        });
+        setErrors(validateRes.data.errors);
+        if (validateRes.data.errors.length > 0) {
+          message.warning(
+            `分配完成，发现 ${validateRes.data.errors.length} 个违规项（已标红）`,
+          );
+        } else if (allocateRes.data.warnings.length > 0) {
+          message.warning(`分配完成，但有 ${allocateRes.data.warnings.length} 条警告`);
+        } else {
+          message.success("分配完成，无违规");
+        }
+      } catch {
+        setErrors([]);
+        if (allocateRes.data.warnings.length > 0) {
+          message.warning(`分配完成，但有 ${allocateRes.data.warnings.length} 条警告`);
+        } else {
+          message.success("分配完成，无警告");
+        }
       }
     } catch (err: any) {
       message.error(err?.response?.data?.detail || "分配失败");
@@ -118,11 +300,58 @@ const App01: React.FC = () => {
     }
   }, [examRows, teachers]);
 
+  const doAiReview = useCallback(async () => {
+    if (examRows.length === 0) {
+      message.warning("请先执行分配");
+      return;
+    }
+    if (!aiConfigured) {
+      message.warning("未接入API，请在管理后台配置大模型Key");
+      return;
+    }
+    setAiReviewing(true);
+    try {
+      const res = await client.post<AiReviewResponse>("/api/app01/ai-review", {
+        exam_rows: examRows,
+        teachers,
+      });
+      if (!res.data.configured) {
+        message.warning("未接入API，请在管理后台配置大模型Key");
+        return;
+      }
+      setAiFindings(res.data.findings);
+      if (res.data.findings.length === 0) {
+        message.success("AI审查通过，未发现问题");
+      } else {
+        message.warning(`AI审查发现 ${res.data.findings.length} 个潜在问题`);
+      }
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail || "AI审查失败，请检查网络连接");
+    } finally {
+      setAiReviewing(false);
+    }
+  }, [examRows, teachers, aiConfigured]);
+
   const doExport = useCallback(async () => {
     if (examRows.length === 0) {
       message.warning("请先执行分配");
       return;
     }
+    if (errors.length > 0) {
+      Modal.confirm({
+        title: "存在违规项",
+        content: `当前有 ${errors.length} 个违规项尚未处理，确定要导出吗？`,
+        okText: "仍然导出",
+        cancelText: "返回修改",
+        okButtonProps: { danger: true },
+        onOk: () => doActualExport(),
+      });
+    } else {
+      doActualExport();
+    }
+  }, [examRows, errors]);
+
+  const doActualExport = useCallback(async () => {
     try {
       const res = await client.get("/api/app01/export", {
         responseType: "blob",
@@ -139,7 +368,7 @@ const App01: React.FC = () => {
     } catch (err: any) {
       message.error("导出失败：" + (err?.response?.data?.detail || err?.message || "未知错误"));
     }
-  }, [examRows]);
+  }, []);
 
   const handleDragStart = (rowIndex: number, field: string, teacher: string) => {
     setDragSource({ rowIndex, field, teacher });
@@ -178,11 +407,17 @@ const App01: React.FC = () => {
           position: targetField,
           new_teacher: srcVal || "",
         });
+        // 交换后自动校验
+        const validateRes = await client.post("/api/app01/validate", {
+          exam_rows: newRows,
+          teachers,
+        });
+        setErrors(validateRes.data.errors);
       } catch {
         // 静默失败
       }
     },
-    [dragSource, examRows]
+    [dragSource, examRows, teachers]
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -216,6 +451,16 @@ const App01: React.FC = () => {
     errorMap.get(key)!.push(e);
   }
 
+  // AI 审查结果映射（用于单元格着色）
+  const aiErrorMap = new Map<string, AiReviewFinding[]>();
+  for (const f of aiFindings) {
+    for (const cell of f.affected_cells) {
+      const key = `${cell.row_index}-${cell.field}`;
+      if (!aiErrorMap.has(key)) aiErrorMap.set(key, []);
+      aiErrorMap.get(key)!.push(f);
+    }
+  }
+
   const buildColumns = (): ColumnsType<ExamRow> => [
     { title: "序号", dataIndex: "index", width: 55 },
     { title: "场次", dataIndex: "场次", width: 55 },
@@ -239,9 +484,12 @@ const App01: React.FC = () => {
         const key = `${record.index}-监考1`;
         const cellErrors = errorMap.get(key);
         const isError = cellErrors && cellErrors.length > 0;
+        const cellAiErrors = aiErrorMap.get(key);
+        const isAiError = cellAiErrors && cellAiErrors.length > 0;
+        const tagColor = isError ? "red" : isAiError ? "orange" : "blue";
         const content = val ? (
           <Tag
-            color={isError ? "red" : "blue"}
+            color={tagColor}
             draggable
             onDragStart={() => handleDragStart(record.index, "监考1", val || "")}
             style={{ cursor: "grab", margin: 0 }}
@@ -266,9 +514,13 @@ const App01: React.FC = () => {
           </Text>
         );
 
-        if (isError) {
+        const tooltipParts: string[] = [];
+        if (cellErrors) tooltipParts.push(...cellErrors.map((e) => e.reason));
+        if (cellAiErrors) tooltipParts.push(...cellAiErrors.map((e) => `[AI] ${e.description}`));
+
+        if (tooltipParts.length > 0) {
           return (
-            <Tooltip title={cellErrors!.map((e) => e.reason).join("；")}>
+            <Tooltip title={tooltipParts.join("；")}>
               {content}
             </Tooltip>
           );
@@ -288,9 +540,12 @@ const App01: React.FC = () => {
         const key = `${record.index}-监考2`;
         const cellErrors = errorMap.get(key);
         const isError = cellErrors && cellErrors.length > 0;
+        const cellAiErrors = aiErrorMap.get(key);
+        const isAiError = cellAiErrors && cellAiErrors.length > 0;
+        const tagColor = isError ? "red" : isAiError ? "orange" : "green";
         const content = val ? (
           <Tag
-            color={isError ? "red" : "green"}
+            color={tagColor}
             draggable
             onDragStart={() => handleDragStart(record.index, "监考2", val || "")}
             style={{ cursor: "grab", margin: 0 }}
@@ -315,9 +570,13 @@ const App01: React.FC = () => {
           </Text>
         );
 
-        if (isError) {
+        const tooltipParts: string[] = [];
+        if (cellErrors) tooltipParts.push(...cellErrors.map((e) => e.reason));
+        if (cellAiErrors) tooltipParts.push(...cellAiErrors.map((e) => `[AI] ${e.description}`));
+
+        if (tooltipParts.length > 0) {
           return (
-            <Tooltip title={cellErrors!.map((e) => e.reason).join("；")}>
+            <Tooltip title={tooltipParts.join("；")}>
               {content}
             </Tooltip>
           );
@@ -340,44 +599,8 @@ const App01: React.FC = () => {
       <Card title="第一步：上传文件" style={{ marginBottom: 16 }}>
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <div style={{ display: "flex", gap: 16 }}>
-            <div style={{ flex: 1 }}>
-              <Text strong>考试安排表（.xlsx）</Text>
-              <Upload
-                accept=".xlsx"
-                maxCount={1}
-                beforeUpload={(file) => {
-                  setExamFile(file);
-                  return false;
-                }}
-                onRemove={() => setExamFile(null)}
-                fileList={
-                  examFile
-                    ? [{ uid: "exam", name: examFile.name, status: "done" } as UploadFile]
-                    : []
-                }
-              >
-                <Button icon={<UploadOutlined />}>选择文件</Button>
-              </Upload>
-            </div>
-            <div style={{ flex: 1 }}>
-              <Text strong>教师通讯录（.xlsx）</Text>
-              <Upload
-                accept=".xlsx"
-                maxCount={1}
-                beforeUpload={(file) => {
-                  setContactFile(file);
-                  return false;
-                }}
-                onRemove={() => setContactFile(null)}
-                fileList={
-                  contactFile
-                    ? [{ uid: "contact", name: contactFile.name, status: "done" } as UploadFile]
-                    : []
-                }
-              >
-                <Button icon={<UploadOutlined />}>选择文件</Button>
-              </Upload>
-            </div>
+            {renderDropZone("exam", examFile, examDragOver, "考试安排表", "拖入或点击选择 .xlsx 文件")}
+            {renderDropZone("contact", contactFile, contactDragOver, "教师通讯录", "拖入或点击选择 .xlsx 文件")}
           </div>
           <Button
             type="primary"
@@ -415,9 +638,21 @@ const App01: React.FC = () => {
               >
                 执行分配
               </Button>
-              <Button icon={<CheckCircleOutlined />} onClick={doValidate} loading={loading}>
-                校验结果
-              </Button>
+              {aiConfigured ? (
+                <Button
+                  icon={<RobotOutlined />}
+                  onClick={doAiReview}
+                  loading={aiReviewing}
+                >
+                  AI审查
+                </Button>
+              ) : (
+                <Tooltip title="未接入API，请在管理后台配置大模型Key">
+                  <Button icon={<RobotOutlined />} disabled>
+                    AI审查
+                  </Button>
+                </Tooltip>
+              )}
               <Button icon={<ExportOutlined />} onClick={doExport}>
                 导出 Excel
               </Button>
@@ -452,11 +687,51 @@ const App01: React.FC = () => {
               />
             )}
 
+            {aiFindings.length > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                closable
+                message={`AI审查：${aiFindings.length} 个潜在问题`}
+                description={
+                  <ul style={{ margin: 0, paddingLeft: 20 }}>
+                    {aiFindings.map((f, i) => (
+                      <li key={i}>
+                        <Tag color={f.rule === "time_overlap" ? "orange" : "gold"}>
+                          {f.rule === "time_overlap" ? "时间重叠" : "应监考自己班级"}
+                        </Tag>
+                        [{f.teacher}] {f.description}
+                      </li>
+                    ))}
+                  </ul>
+                }
+                style={{ marginBottom: 16 }}
+              />
+            )}
+
             <Tabs
-              defaultActiveKey={dateGroups[0]?.date}
+              activeKey={activeTab || dateGroups[0]?.date}
+              onChange={setActiveTab}
               items={dateGroups.map((g) => ({
                 key: g.date,
-                label: `${g.date}（${g.rows.length}场）`,
+                label: (
+                  <span
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (dragSource && activeTab !== g.date) {
+                        if (tabHoverTimer.current) clearTimeout(tabHoverTimer.current);
+                        tabHoverTimer.current = setTimeout(() => {
+                          setActiveTab(g.date);
+                        }, 600);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (tabHoverTimer.current) clearTimeout(tabHoverTimer.current);
+                    }}
+                  >
+                    {g.date}（{g.rows.length}场）
+                  </span>
+                ),
                 children: (
                   <Table
                     columns={buildColumns()}

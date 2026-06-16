@@ -60,3 +60,22 @@ export interface ValidationError {
 export interface ValidateResponse {
   errors: ValidationError[];
 }
+
+// ===== app01 AI审查类型 =====
+
+export interface AiAffectedCell {
+  row_index: number;
+  field: string;
+}
+
+export interface AiReviewFinding {
+  rule: string;
+  teacher: string;
+  description: string;
+  affected_cells: AiAffectedCell[];
+}
+
+export interface AiReviewResponse {
+  configured: boolean;
+  findings: AiReviewFinding[];
+}

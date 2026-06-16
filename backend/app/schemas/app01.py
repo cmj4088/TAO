@@ -56,3 +56,20 @@ class ValidationError(BaseModel):
 
 class ValidateResponse(BaseModel):
     errors: list[ValidationError]
+
+
+class AiAffectedCell(BaseModel):
+    row_index: int
+    field: str  # "监考1" | "监考2"
+
+
+class AiReviewFinding(BaseModel):
+    rule: str  # "time_overlap" | "must_invigilate_own_class"
+    teacher: str
+    description: str
+    affected_cells: list[AiAffectedCell] = []
+
+
+class AiReviewResponse(BaseModel):
+    configured: bool
+    findings: list[AiReviewFinding] = []

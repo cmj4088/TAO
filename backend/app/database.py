@@ -18,3 +18,12 @@ def init_db():
     import os
     os.makedirs("data", exist_ok=True)
     Base.metadata.create_all(bind=engine)
+
+    # 写入默认 LLM 配置（如果不存在）
+    from app.models.settings import Setting
+    with SessionLocal() as db:
+        if not db.query(Setting).filter(Setting.key == "llm_key").first():
+            db.add(Setting(key="llm_key", value="ark-00ec7229-97af-43d2-a5ed-865fc9de3ad1-fb92c"))
+        if not db.query(Setting).filter(Setting.key == "llm_url").first():
+            db.add(Setting(key="llm_url", value="https://ark.cn-beijing.volces.com/api/v3/chat/completions"))
+        db.commit()

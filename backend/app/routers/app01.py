@@ -19,8 +19,13 @@ from app.schemas.app01 import (
     SwapResponse,
     ValidateResponse,
     ValidationError,
+    AiReviewResponse,
+    AiReviewFinding,
+    AiAffectedCell,
 )
 from app.services.invigilator import allocate, validate
+from app.services.ai_reviewer import review as ai_review
+from app.config import ConfigManager
 
 router = APIRouter(prefix="/api/app01", tags=["app01"])
 
@@ -211,3 +216,44 @@ def export_excel():
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
         },
     )
+
+
+@router.get("/ai-review/status")
+def ai_review_status():
+    """检查 AI 审查是否可用"""
+    api_key = ConfigManager.get("llm_key", "")
+    configured = bool(api_key)
+    return {"configured": configured}
+
+
+@router.post("/ai-review", response_model=AiReviewResponse)
+async def run_ai_review(body: AllocateRequest | None = None):
+    """AI 审查当前分配结果"""
+    rows = _session_exam_rows
+    if not rows:
+        raise HTTPException(400, "请先上传文件并执行分配")
+
+    if body and body.exam_rows:
+        rows = body.exam_rows
+
+    api_key = ConfigManager.get("llm_key", "")
+    if not api_key:
+        return AiReviewResponse(configured=False, findings=[])
+
+    try:
+        finding_dicts, _ = await ai_review(rows, api_key)
+        findings = [
+            AiReviewFinding(
+                rule=f["rule"],
+                teacher=f["teacher"],
+                description=f["description"],
+                affected_cells=[
+                    AiAffectedCell(row_index=c["row_index"], field=c["field"])
+                    for c in f.get("affected_cells", [])
+                ],
+            )
+            for f in finding_dicts
+        ]
+        return AiReviewResponse(configured=True, findings=findings)
+    except Exception as e:
+        raise HTTPException(500, f"AI审查失败：{str(e)}")
