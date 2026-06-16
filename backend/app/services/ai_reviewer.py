@@ -99,6 +99,11 @@ def parse_ai_response(raw_text: str) -> list[dict]:
     return findings
 
 
+# 绕过系统代理，直连火山引擎 API
+_proxy_handler = urllib.request.ProxyHandler({})
+_opener = urllib.request.build_opener(_proxy_handler)
+
+
 def _call_api(api_key: str, prompt: str) -> str:
     """同步调用火山引擎 API，返回 AI 响应文本"""
     body = json.dumps({
@@ -119,7 +124,7 @@ def _call_api(api_key: str, prompt: str) -> str:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with _opener.open(req, timeout=300) as resp:
             result = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"AI API 返回错误 {e.code}: {e.read().decode('utf-8', errors='replace')[:500]}")

@@ -40,6 +40,11 @@ const App01: React.FC = () => {
     teacher: string;
   } | null>(null);
   const tabHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 用 ref 避免拖拽时闭包读到过期的 state
+  const dragSourceRef = useRef(dragSource);
+  dragSourceRef.current = dragSource;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
 
   const [aiConfigured, setAiConfigured] = useState(false);
   const [aiFindings, setAiFindings] = useState<AiReviewFinding[]>([]);
@@ -712,21 +717,28 @@ const App01: React.FC = () => {
             <Tabs
               activeKey={activeTab || dateGroups[0]?.date}
               onChange={setActiveTab}
+              destroyInactiveTabPane={false}
               items={dateGroups.map((g) => ({
                 key: g.date,
                 label: (
                   <span
+                    style={{ display: "inline-block", width: "100%" }}
                     onDragOver={(e) => {
                       e.preventDefault();
-                      if (dragSource && activeTab !== g.date) {
-                        if (tabHoverTimer.current) clearTimeout(tabHoverTimer.current);
-                        tabHoverTimer.current = setTimeout(() => {
-                          setActiveTab(g.date);
-                        }, 600);
+                      if (dragSourceRef.current && activeTabRef.current !== g.date) {
+                        if (!tabHoverTimer.current) {
+                          tabHoverTimer.current = setTimeout(() => {
+                            setActiveTab(g.date);
+                            tabHoverTimer.current = null;
+                          }, 600);
+                        }
                       }
                     }}
                     onDragLeave={() => {
-                      if (tabHoverTimer.current) clearTimeout(tabHoverTimer.current);
+                      if (tabHoverTimer.current) {
+                        clearTimeout(tabHoverTimer.current);
+                        tabHoverTimer.current = null;
+                      }
                     }}
                   >
                     {g.date}（{g.rows.length}场）
