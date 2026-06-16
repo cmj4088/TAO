@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(where python3 *)",
+      "Read(//c/Users/32277/AppData/Local/Programs/Python//**)",
+      "Read(//c/Users/32277/AppData/Local/Microsoft/WindowsApps/**)",
+      "Bash(C:/Users/32277/Desktop/TAO/backend/venv/Scripts/python.exe -c ' *)",
+      "Bash(\"C:/Users/32277/Desktop/TAO/backend/venv/Scripts/python.exe\" -m uvicorn app.main:app --port 8000)",
+      "Bash(\"C:/Users/32277/Desktop/TAO/backend/venv/Scripts/pip.exe\" install *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(start \"\" \"http://localhost:5173/app/app01\")",
+      "Bash(curl -s -o /dev/null -w \"frontend: %{http_code}\" http://localhost:5173)",
+      "Bash(taskkill //F //FI \"WINDOWTITLE eq uvicorn*\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\32277\\.claude"
+    ]
+  }
+}
