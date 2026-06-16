@@ -11,7 +11,12 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
       "Bash(start \"\" \"http://localhost:5173/app/app01\")",
       "Bash(curl -s -o /dev/null -w \"frontend: %{http_code}\" http://localhost:5173)",
-      "Bash(taskkill //F //FI \"WINDOWTITLE eq uvicorn*\")"
+      "Bash(taskkill //F //FI \"WINDOWTITLE eq uvicorn*\")",
+      "Bash(venv/Scripts/pip install *)",
+      "Bash(nohup python -m uvicorn app.main:app --port 8000 --host 0.0.0.0)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(curl -s http://localhost:8000/api/app02/status)",
+      "Bash(curl -s http://127.0.0.1:8000/api/version)"
     ],
     "additionalDirectories": [
       "C:\\Users\\32277\\.claude"
