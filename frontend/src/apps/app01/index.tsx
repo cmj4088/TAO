@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   Card,
   Button,
@@ -15,15 +15,13 @@ import {
 import {
   PlayCircleOutlined,
   ExportOutlined,
-  CheckCircleOutlined,
   InboxOutlined,
   FileExcelOutlined,
   DeleteOutlined,
-  RobotOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import client from "@/api/client";
-import type { ExamRow, TeacherInfo, AllocateResponse, ValidationError, AiReviewFinding, AiReviewResponse } from "@/types";
+import type { ExamRow, TeacherInfo, AllocateResponse, ValidationError } from "@/types";
 
 const { Title, Text } = Typography;
 
@@ -45,22 +43,6 @@ const App01: React.FC = () => {
   dragSourceRef.current = dragSource;
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
-
-  const [aiConfigured, setAiConfigured] = useState(false);
-  const [aiFindings, setAiFindings] = useState<AiReviewFinding[]>([]);
-  const [aiReviewing, setAiReviewing] = useState(false);
-  const [aiElapsed, setAiElapsed] = useState(0);
-  const aiPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const aiTaskIdRef = useRef<string>("");
-  const aiStartTimeRef = useRef(0);
-
-  // 页面加载时检查 AI 是否已配置
-  useEffect(() => {
-    client
-      .get("/api/app01/ai-review/status")
-      .then((res) => setAiConfigured(res.data.configured))
-      .catch(() => setAiConfigured(false));
-  }, []);
 
   const [examFile, setExamFile] = useState<File | null>(null);
   const [contactFile, setContactFile] = useState<File | null>(null);
@@ -252,7 +234,6 @@ const App01: React.FC = () => {
       });
       setExamRows(allocateRes.data.exam_rows);
       setWarnings(allocateRes.data.warnings);
-      setAiFindings([]);
 
       // 分配后自动校验
       try {
@@ -308,62 +289,6 @@ const App01: React.FC = () => {
       setLoading(false);
     }
   }, [examRows, teachers]);
-
-  const doAiReview = useCallback(async () => {
-    if (examRows.length === 0) {
-      message.warning("请先执行分配");
-      return;
-    }
-    if (!aiConfigured) {
-      message.warning("未接入API，请在管理后台配置大模型Key");
-      return;
-    }
-    setAiReviewing(true);
-    setAiElapsed(0);
-    setAiFindings([]);
-
-    try {
-      // 启动AI审查任务
-      const startRes = await client.post("/api/app01/ai-review/start", {
-        exam_rows: examRows,
-        teachers,
-      });
-      const taskId = startRes.data.task_id;
-      aiTaskIdRef.current = taskId;
-      aiStartTimeRef.current = Date.now();
-
-      // 每秒轮询进度
-      aiPollTimer.current = setInterval(async () => {
-        setAiElapsed(Math.round((Date.now() - aiStartTimeRef.current) / 1000));
-        try {
-          const progressRes = await client.get(`/api/app01/ai-review/progress/${taskId}`);
-          const { status, findings, error } = progressRes.data;
-
-          if (status === "done") {
-            clearInterval(aiPollTimer.current!);
-            aiPollTimer.current = null;
-            setAiReviewing(false);
-            setAiFindings(findings || []);
-            if (!findings || findings.length === 0) {
-              message.success("AI审查通过，未发现问题");
-            } else {
-              message.warning(`AI审查发现 ${findings.length} 个潜在问题`);
-            }
-          } else if (status === "error") {
-            clearInterval(aiPollTimer.current!);
-            aiPollTimer.current = null;
-            setAiReviewing(false);
-            message.error(`AI审查失败：${error || "未知错误"}`);
-          }
-        } catch {
-          // 轮询失败继续重试
-        }
-      }, 1000);
-    } catch (err: any) {
-      setAiReviewing(false);
-      message.error(err?.response?.data?.detail || "AI审查启动失败");
-    }
-  }, [examRows, teachers, aiConfigured]);
 
   const doExport = useCallback(async () => {
     if (examRows.length === 0) {
@@ -436,9 +361,10 @@ const App01: React.FC = () => {
 
       try {
         await client.post("/api/app01/swap", {
-          row_index: targetRowIndex,
-          position: targetField,
-          new_teacher: srcVal || "",
+          source_row_index: dragSource.rowIndex,
+          source_position: dragSource.field,
+          target_row_index: targetRowIndex,
+          target_position: targetField,
         });
         // 交换后自动校验
         const validateRes = await client.post("/api/app01/validate", {
@@ -484,16 +410,6 @@ const App01: React.FC = () => {
     errorMap.get(key)!.push(e);
   }
 
-  // AI 审查结果映射（用于单元格着色）
-  const aiErrorMap = new Map<string, AiReviewFinding[]>();
-  for (const f of aiFindings) {
-    for (const cell of f.affected_cells) {
-      const key = `${cell.row_index}-${cell.field}`;
-      if (!aiErrorMap.has(key)) aiErrorMap.set(key, []);
-      aiErrorMap.get(key)!.push(f);
-    }
-  }
-
   const buildColumns = (): ColumnsType<ExamRow> => [
     { title: "序号", dataIndex: "index", width: 55 },
     { title: "场次", dataIndex: "场次", width: 55 },
@@ -517,9 +433,7 @@ const App01: React.FC = () => {
         const key = `${record.index}-监考1`;
         const cellErrors = errorMap.get(key);
         const isError = cellErrors && cellErrors.length > 0;
-        const cellAiErrors = aiErrorMap.get(key);
-        const isAiError = cellAiErrors && cellAiErrors.length > 0;
-        const tagColor = isError ? "red" : isAiError ? "orange" : "blue";
+        const tagColor = isError ? "red" : "blue";
         const content = val ? (
           <Tag
             color={tagColor}
@@ -549,7 +463,6 @@ const App01: React.FC = () => {
 
         const tooltipParts: string[] = [];
         if (cellErrors) tooltipParts.push(...cellErrors.map((e) => e.reason));
-        if (cellAiErrors) tooltipParts.push(...cellAiErrors.map((e) => `[AI] ${e.description}`));
 
         if (tooltipParts.length > 0) {
           return (
@@ -573,9 +486,7 @@ const App01: React.FC = () => {
         const key = `${record.index}-监考2`;
         const cellErrors = errorMap.get(key);
         const isError = cellErrors && cellErrors.length > 0;
-        const cellAiErrors = aiErrorMap.get(key);
-        const isAiError = cellAiErrors && cellAiErrors.length > 0;
-        const tagColor = isError ? "red" : isAiError ? "orange" : "green";
+        const tagColor = isError ? "red" : "green";
         const content = val ? (
           <Tag
             color={tagColor}
@@ -605,7 +516,6 @@ const App01: React.FC = () => {
 
         const tooltipParts: string[] = [];
         if (cellErrors) tooltipParts.push(...cellErrors.map((e) => e.reason));
-        if (cellAiErrors) tooltipParts.push(...cellAiErrors.map((e) => `[AI] ${e.description}`));
 
         if (tooltipParts.length > 0) {
           return (
@@ -671,23 +581,6 @@ const App01: React.FC = () => {
               >
                 执行分配
               </Button>
-              {aiConfigured ? (
-                <Tooltip title={aiReviewing ? `AI正在分析中...（已等待 ${aiElapsed} 秒）` : undefined}>
-                  <Button
-                    icon={<RobotOutlined />}
-                    onClick={doAiReview}
-                    loading={aiReviewing}
-                  >
-                    {aiReviewing ? `分析中(${aiElapsed}s)` : "AI审查"}
-                  </Button>
-                </Tooltip>
-              ) : (
-                <Tooltip title="未接入API，请在管理后台配置大模型Key">
-                  <Button icon={<RobotOutlined />} disabled>
-                    AI审查
-                  </Button>
-                </Tooltip>
-              )}
               <Button icon={<ExportOutlined />} onClick={doExport}>
                 导出 Excel
               </Button>
@@ -718,28 +611,6 @@ const App01: React.FC = () => {
                 closable
                 message={`${errors.length} 个违规项`}
                 description="红色标记的单元格存在违规，鼠标悬停查看详情"
-                style={{ marginBottom: 16 }}
-              />
-            )}
-
-            {aiFindings.length > 0 && (
-              <Alert
-                type="warning"
-                showIcon
-                closable
-                message={`AI审查：${aiFindings.length} 个潜在问题`}
-                description={
-                  <ul style={{ margin: 0, paddingLeft: 20 }}>
-                    {aiFindings.map((f, i) => (
-                      <li key={i}>
-                        <Tag color={f.rule === "time_overlap" ? "orange" : "gold"}>
-                          {f.rule === "time_overlap" ? "时间重叠" : "应监考自己班级"}
-                        </Tag>
-                        [{f.teacher}] {f.description}
-                      </li>
-                    ))}
-                  </ul>
-                }
                 style={{ marginBottom: 16 }}
               />
             )}

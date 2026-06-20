@@ -2,9 +2,6 @@
 import io
 import re
 import copy
-import threading
-import uuid
-from typing import Any
 from urllib.parse import quote
 
 import openpyxl
@@ -21,18 +18,10 @@ from app.schemas.app01 import (
     SwapResponse,
     ValidateResponse,
     ValidationError,
-    AiReviewResponse,
-    AiReviewFinding,
-    AiAffectedCell,
 )
 from app.services.invigilator import allocate, validate
-from app.services.ai_reviewer import review as ai_review
-from app.config import ConfigManager
 
 router = APIRouter(prefix="/api/app01", tags=["app01"])
-
-# AI审查后台任务存储
-_ai_tasks: dict[str, dict] = {}
 
 # 当前会话状态（内存中保存已上传解析的数据和分配结果）
 _session_exam_rows: list[ExamRow] | None = None
@@ -155,17 +144,26 @@ def run_allocation(body: AllocateRequest):
 
 @router.post("/swap", response_model=SwapResponse)
 def swap_teacher(body: SwapRequest):
-    """手动替换监考老师"""
+    """交换两个监考格子的老师"""
     global _session_exam_rows
 
     if not _session_exam_rows:
         raise HTTPException(400, "请先上传文件并执行分配")
 
     rows = copy.deepcopy(_session_exam_rows)
+    src_val = None
+    tgt_val = None
     for row in rows:
-        if row.index == body.row_index:
-            setattr(row, body.position, body.new_teacher if body.new_teacher else None)
-            break
+        if row.index == body.source_row_index:
+            src_val = getattr(row, body.source_position)
+        if row.index == body.target_row_index:
+            tgt_val = getattr(row, body.target_position)
+
+    for row in rows:
+        if row.index == body.source_row_index:
+            setattr(row, body.source_position, tgt_val)
+        if row.index == body.target_row_index:
+            setattr(row, body.target_position, src_val)
 
     _session_exam_rows = rows
     return SwapResponse(exam_rows=rows)
@@ -221,65 +219,3 @@ def export_excel():
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
         },
     )
-
-
-@router.get("/ai-review/status")
-def ai_review_status():
-    """检查 AI 审查是否可用"""
-    api_key = ConfigManager.get("llm_key", "")
-    configured = bool(api_key)
-    return {"configured": configured}
-
-
-def _run_ai_review_task(task_id: str, rows: list[ExamRow], api_key: str):
-    """后台线程执行 AI审查"""
-    import asyncio
-    try:
-        finding_dicts, _ = asyncio.run(ai_review(rows, api_key))
-        findings = [
-            AiReviewFinding(
-                rule=f["rule"],
-                teacher=f["teacher"],
-                description=f["description"],
-                affected_cells=[
-                    AiAffectedCell(row_index=c["row_index"], field=c["field"])
-                    for c in f.get("affected_cells", [])
-                ],
-            )
-            for f in finding_dicts
-        ]
-        _ai_tasks[task_id] = {"status": "done", "findings": [f.model_dump() for f in findings]}
-    except Exception as e:
-        _ai_tasks[task_id] = {"status": "error", "error": str(e)}
-
-
-@router.post("/ai-review/start")
-def start_ai_review(body: AllocateRequest | None = None):
-    """启动 AI审查后台任务，返回任务ID"""
-    rows = _session_exam_rows
-    if not rows:
-        raise HTTPException(400, "请先上传文件并执行分配")
-
-    if body and body.exam_rows:
-        rows = body.exam_rows
-
-    api_key = ConfigManager.get("llm_key", "")
-    if not api_key:
-        raise HTTPException(400, "未配置 API Key")
-
-    task_id = str(uuid.uuid4())
-    _ai_tasks[task_id] = {"status": "running"}
-
-    t = threading.Thread(target=_run_ai_review_task, args=(task_id, rows, api_key), daemon=True)
-    t.start()
-
-    return {"task_id": task_id, "status": "running"}
-
-
-@router.get("/ai-review/progress/{task_id}")
-def ai_review_progress(task_id: str):
-    """查询 AI审查任务进度"""
-    task = _ai_tasks.get(task_id)
-    if not task:
-        raise HTTPException(404, "任务不存在或已过期")
-    return task
