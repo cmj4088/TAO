@@ -2,6 +2,8 @@
 import io
 import re
 import copy
+import threading
+import uuid
 from typing import Any
 from urllib.parse import quote
 
@@ -28,6 +30,9 @@ from app.services.ai_reviewer import review as ai_review
 from app.config import ConfigManager
 
 router = APIRouter(prefix="/api/app01", tags=["app01"])
+
+# AI审查后台任务存储
+_ai_tasks: dict[str, dict] = {}
 
 # 当前会话状态（内存中保存已上传解析的数据和分配结果）
 _session_exam_rows: list[ExamRow] | None = None
@@ -226,22 +231,11 @@ def ai_review_status():
     return {"configured": configured}
 
 
-@router.post("/ai-review", response_model=AiReviewResponse)
-async def run_ai_review(body: AllocateRequest | None = None):
-    """AI 审查当前分配结果"""
-    rows = _session_exam_rows
-    if not rows:
-        raise HTTPException(400, "请先上传文件并执行分配")
-
-    if body and body.exam_rows:
-        rows = body.exam_rows
-
-    api_key = ConfigManager.get("llm_key", "")
-    if not api_key:
-        return AiReviewResponse(configured=False, findings=[])
-
+def _run_ai_review_task(task_id: str, rows: list[ExamRow], api_key: str):
+    """后台线程执行 AI审查"""
+    import asyncio
     try:
-        finding_dicts, _ = await ai_review(rows, api_key)
+        finding_dicts, _ = asyncio.run(ai_review(rows, api_key))
         findings = [
             AiReviewFinding(
                 rule=f["rule"],
@@ -254,6 +248,38 @@ async def run_ai_review(body: AllocateRequest | None = None):
             )
             for f in finding_dicts
         ]
-        return AiReviewResponse(configured=True, findings=findings)
+        _ai_tasks[task_id] = {"status": "done", "findings": [f.model_dump() for f in findings]}
     except Exception as e:
-        raise HTTPException(500, f"AI审查失败：{str(e)}")
+        _ai_tasks[task_id] = {"status": "error", "error": str(e)}
+
+
+@router.post("/ai-review/start")
+def start_ai_review(body: AllocateRequest | None = None):
+    """启动 AI审查后台任务，返回任务ID"""
+    rows = _session_exam_rows
+    if not rows:
+        raise HTTPException(400, "请先上传文件并执行分配")
+
+    if body and body.exam_rows:
+        rows = body.exam_rows
+
+    api_key = ConfigManager.get("llm_key", "")
+    if not api_key:
+        raise HTTPException(400, "未配置 API Key")
+
+    task_id = str(uuid.uuid4())
+    _ai_tasks[task_id] = {"status": "running"}
+
+    t = threading.Thread(target=_run_ai_review_task, args=(task_id, rows, api_key), daemon=True)
+    t.start()
+
+    return {"task_id": task_id, "status": "running"}
+
+
+@router.get("/ai-review/progress/{task_id}")
+def ai_review_progress(task_id: str):
+    """查询 AI审查任务进度"""
+    task = _ai_tasks.get(task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在或已过期")
+    return task

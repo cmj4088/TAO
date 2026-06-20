@@ -7,6 +7,7 @@ class ReviewIssue(BaseModel):
     detail: str     # 人类可读的问题描述
     location: str   # 位置，如 "表格1 第3行第2列"
     snippet: str    # 问题文本片段
+    severity: str = "error"  # "error" = 关键错误（不通过）, "warning" = 提醒建议
 
 
 class FileReviewResult(BaseModel):
@@ -35,3 +36,14 @@ class ReviewResponse(BaseModel):
     mode: str           # "single" | "batch"
     results: list[FileReviewResult]
     summary: str
+    ai_task_id: str = ""  # AI审查任务ID，空字符串表示未启动
+
+
+class AiReviewFindingApp02(BaseModel):
+    rule: str           # "school_name_error" | "teacher_mismatch" | "typo" | "hour_calculation_error" | "hour_inconsistency"
+    severity: str = "error"  # "error" | "warning"
+    description: str
+    location: str
+    suggestion: str
+    file_id: str = ""
+    filename: str = ""

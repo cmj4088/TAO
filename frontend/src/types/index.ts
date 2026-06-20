@@ -87,6 +87,7 @@ export interface ReviewIssue {
   detail: string;
   location: string;
   snippet: string;
+  severity: "error" | "warning";
 }
 
 export interface FileReviewResult {
@@ -103,6 +104,7 @@ export interface ReviewResponse {
   mode: "single" | "batch";
   results: FileReviewResult[];
   summary: string;
+  ai_task_id?: string;
 }
 
 export interface UploadedFileInfo {
@@ -115,4 +117,38 @@ export interface UploadedFileInfo {
 
 export interface UploadResponse {
   files: UploadedFileInfo[];
+}
+
+// ===== app02 AI审查类型 =====
+
+export interface AiReviewFindingApp02 {
+  rule: string;
+  severity: "error" | "warning";
+  description: string;
+  location: string;
+  suggestion: string;
+  file_id: string;
+  filename: string;
+}
+
+export interface AiFileProgress {
+  file_id: string;
+  filename: string;
+  status: "waiting" | "reviewing" | "done";
+  findings: AiReviewFindingApp02[];
+  extracted_info?: {
+    teacher?: string | null;
+    course?: string | null;
+    class_name?: string | null;
+  };
+}
+
+export interface AiReviewProgressApp02 {
+  status: "running" | "done" | "error";
+  total: number;
+  completed: number;
+  current_file_id: string | null;
+  files: AiFileProgress[];
+  findings: AiReviewFindingApp02[];
+  error: string | null;
 }

@@ -49,6 +49,10 @@ const App01: React.FC = () => {
   const [aiConfigured, setAiConfigured] = useState(false);
   const [aiFindings, setAiFindings] = useState<AiReviewFinding[]>([]);
   const [aiReviewing, setAiReviewing] = useState(false);
+  const [aiElapsed, setAiElapsed] = useState(0);
+  const aiPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const aiTaskIdRef = useRef<string>("");
+  const aiStartTimeRef = useRef(0);
 
   // 页面加载时检查 AI 是否已配置
   useEffect(() => {
@@ -315,25 +319,49 @@ const App01: React.FC = () => {
       return;
     }
     setAiReviewing(true);
+    setAiElapsed(0);
+    setAiFindings([]);
+
     try {
-      const res = await client.post<AiReviewResponse>("/api/app01/ai-review", {
+      // 启动AI审查任务
+      const startRes = await client.post("/api/app01/ai-review/start", {
         exam_rows: examRows,
         teachers,
       });
-      if (!res.data.configured) {
-        message.warning("未接入API，请在管理后台配置大模型Key");
-        return;
-      }
-      setAiFindings(res.data.findings);
-      if (res.data.findings.length === 0) {
-        message.success("AI审查通过，未发现问题");
-      } else {
-        message.warning(`AI审查发现 ${res.data.findings.length} 个潜在问题`);
-      }
+      const taskId = startRes.data.task_id;
+      aiTaskIdRef.current = taskId;
+      aiStartTimeRef.current = Date.now();
+
+      // 每秒轮询进度
+      aiPollTimer.current = setInterval(async () => {
+        setAiElapsed(Math.round((Date.now() - aiStartTimeRef.current) / 1000));
+        try {
+          const progressRes = await client.get(`/api/app01/ai-review/progress/${taskId}`);
+          const { status, findings, error } = progressRes.data;
+
+          if (status === "done") {
+            clearInterval(aiPollTimer.current!);
+            aiPollTimer.current = null;
+            setAiReviewing(false);
+            setAiFindings(findings || []);
+            if (!findings || findings.length === 0) {
+              message.success("AI审查通过，未发现问题");
+            } else {
+              message.warning(`AI审查发现 ${findings.length} 个潜在问题`);
+            }
+          } else if (status === "error") {
+            clearInterval(aiPollTimer.current!);
+            aiPollTimer.current = null;
+            setAiReviewing(false);
+            message.error(`AI审查失败：${error || "未知错误"}`);
+          }
+        } catch {
+          // 轮询失败继续重试
+        }
+      }, 1000);
     } catch (err: any) {
-      message.error(err?.response?.data?.detail || "AI审查失败，请检查网络连接");
-    } finally {
       setAiReviewing(false);
+      message.error(err?.response?.data?.detail || "AI审查启动失败");
     }
   }, [examRows, teachers, aiConfigured]);
 
@@ -644,13 +672,15 @@ const App01: React.FC = () => {
                 执行分配
               </Button>
               {aiConfigured ? (
-                <Button
-                  icon={<RobotOutlined />}
-                  onClick={doAiReview}
-                  loading={aiReviewing}
-                >
-                  AI审查
-                </Button>
+                <Tooltip title={aiReviewing ? `AI正在分析中...（已等待 ${aiElapsed} 秒）` : undefined}>
+                  <Button
+                    icon={<RobotOutlined />}
+                    onClick={doAiReview}
+                    loading={aiReviewing}
+                  >
+                    {aiReviewing ? `分析中(${aiElapsed}s)` : "AI审查"}
+                  </Button>
+                </Tooltip>
               ) : (
                 <Tooltip title="未接入API，请在管理后台配置大模型Key">
                   <Button icon={<RobotOutlined />} disabled>
