@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Card,
   Button,
@@ -14,6 +14,7 @@ import {
 } from "antd";
 import {
   PlayCircleOutlined,
+  UndoOutlined,
   ExportOutlined,
   InboxOutlined,
   FileExcelOutlined,
@@ -40,12 +41,22 @@ const App01: React.FC = () => {
     field: string;
     teacher: string;
   } | null>(null);
+  const [undoStack, setUndoStack] = useState<ExamRow[][]>([]);
+  const undoStackRef = useRef(undoStack);
+  undoStackRef.current = undoStack;
+  const teachersRef = useRef(teachers);
+  teachersRef.current = teachers;
+  const allocModeRef = useRef(allocMode);
+  allocModeRef.current = allocMode;
+  const examRowsRef = useRef(examRows);
+  examRowsRef.current = examRows;
   const tabHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 用 ref 避免拖拽时闭包读到过期的 state
   const dragSourceRef = useRef(dragSource);
   dragSourceRef.current = dragSource;
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
+  const stickerTeacherRef = useRef<string | null>(null);
 
   const [examFile, setExamFile] = useState<File | null>(null);
   const [contactFile, setContactFile] = useState<File | null>(null);
@@ -229,6 +240,12 @@ const App01: React.FC = () => {
       message.warning("请先上传文件");
       return;
     }
+    // 压入撤销栈
+    setUndoStack((prev) => {
+      const next = [...prev, examRows];
+      if (next.length > 50) next.shift();
+      return next;
+    });
     setLoading(true);
     try {
       const allocateRes = await client.post<AllocateResponse>("/api/app01/allocate", {
@@ -334,17 +351,80 @@ const App01: React.FC = () => {
     }
   }, []);
 
+  const doReplace = useCallback(
+    async (rowIndex: number, field: "监考1" | "监考2", newTeacher: string) => {
+      // 压入撤销栈
+      setUndoStack((prev) => {
+        const next = [...prev, examRows];
+        if (next.length > 50) next.shift();
+        return next;
+      });
+      const newRows = [...examRows];
+      const tgtRow = newRows.find((r) => r.index === rowIndex);
+      if (!tgtRow) return;
+      tgtRow[field] = newTeacher || null;
+      setExamRows(newRows);
+
+      try {
+        await client.post("/api/app01/replace", {
+          row_index: rowIndex,
+          position: field,
+          new_teacher: newTeacher,
+        });
+        // 替换后重新计算场次并自动校验
+        const newLoadMap = new Map<string, number>();
+        for (const r of newRows) {
+          if (r.监考1) newLoadMap.set(r.监考1, (newLoadMap.get(r.监考1) || 0) + 1);
+          if (r.监考2) newLoadMap.set(r.监考2, (newLoadMap.get(r.监考2) || 0) + 1);
+        }
+        setTeacherLoads(Object.fromEntries(newLoadMap));
+        const validateRes = await client.post("/api/app01/validate", {
+          exam_rows: newRows,
+          teachers,
+          mode: allocMode,
+        });
+        setErrors(validateRes.data.errors);
+        message.success("替换成功");
+      } catch {
+        // 静默
+      }
+    },
+    [examRows, teachers, allocMode],
+  );
+
   const handleDragStart = (rowIndex: number, field: string, teacher: string) => {
+    stickerTeacherRef.current = null;
     setDragSource({ rowIndex, field, teacher });
+  };
+
+  const handleStickerDragStart = (teacherName: string) => {
+    stickerTeacherRef.current = teacherName;
+    setDragSource(null);
   };
 
   const handleDrop = useCallback(
     async (targetRowIndex: number, targetField: string) => {
+      // 贴纸拖拽：替换而非交换
+      if (stickerTeacherRef.current) {
+        const stickerTeacher = stickerTeacherRef.current;
+        stickerTeacherRef.current = null;
+        setDragSource(null);
+        await doReplace(targetRowIndex, targetField as "监考1" | "监考2", stickerTeacher);
+        return;
+      }
+
       if (!dragSource) return;
       if (dragSource.rowIndex === targetRowIndex && dragSource.field === targetField) {
         setDragSource(null);
         return;
       }
+
+      // 压入撤销栈
+      setUndoStack((prev) => {
+        const next = [...prev, examRows];
+        if (next.length > 50) next.shift();
+        return next;
+      });
 
       const newRows = [...examRows];
       const srcRow = newRows.find((r) => r.index === dragSource.rowIndex);
@@ -372,7 +452,13 @@ const App01: React.FC = () => {
           target_row_index: targetRowIndex,
           target_position: targetField,
         });
-        // 交换后自动校验
+        // 交换后重新计算场次
+        const newLoadMap = new Map<string, number>();
+        for (const r of newRows) {
+          if (r.监考1) newLoadMap.set(r.监考1, (newLoadMap.get(r.监考1) || 0) + 1);
+          if (r.监考2) newLoadMap.set(r.监考2, (newLoadMap.get(r.监考2) || 0) + 1);
+        }
+        setTeacherLoads(Object.fromEntries(newLoadMap));
         const validateRes = await client.post("/api/app01/validate", {
           exam_rows: newRows,
           teachers,
@@ -383,12 +469,48 @@ const App01: React.FC = () => {
         // 静默失败
       }
     },
-    [dragSource, examRows, teachers]
+    [dragSource, examRows, teachers, doReplace],
   );
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
+
+  // 撤销逻辑（按钮和 Ctrl+Z 共用）
+  const doUndo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return;
+    const snapshot = undoStackRef.current[undoStackRef.current.length - 1];
+    const remaining = undoStackRef.current.length - 1;
+    setUndoStack((prev) => prev.slice(0, -1));
+    setExamRows(snapshot);
+    const newLoadMap = new Map<string, number>();
+    for (const r of snapshot) {
+      if (r.监考1) newLoadMap.set(r.监考1, (newLoadMap.get(r.监考1) || 0) + 1);
+      if (r.监考2) newLoadMap.set(r.监考2, (newLoadMap.get(r.监考2) || 0) + 1);
+    }
+    setTeacherLoads(Object.fromEntries(newLoadMap));
+    client.post("/api/app01/set-rows", { exam_rows: snapshot }).catch(() => {});
+    client.post("/api/app01/validate", {
+      exam_rows: snapshot,
+      teachers: teachersRef.current,
+      mode: allocModeRef.current,
+    }).then((res) => { setErrors(res?.data?.errors || []); }).catch(() => {});
+    message.info(`已撤销（剩余 ${remaining} 步）`);
+  }, []);
+
+  // Ctrl+Z 快捷键
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === "z" && !e.repeat) {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
+        e.preventDefault();
+        doUndo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [doUndo]);
 
   // 从考试时间中提取日期，如 "2026-01-20(09:00-10:30)" → "2026-01-20"
   const extractDate = (time: string) => {
@@ -636,6 +758,15 @@ const App01: React.FC = () => {
               >
                 执行分配
               </Button>
+              <Tooltip title="撤销上一步（Ctrl+Z）">
+                <Button
+                  icon={<UndoOutlined />}
+                  onClick={doUndo}
+                  disabled={undoStack.length === 0}
+                >
+                  撤销{undoStack.length > 0 ? `（${undoStack.length}）` : ""}
+                </Button>
+              </Tooltip>
               <Button
                 type={allocMode === "strict" ? "default" : "dashed"}
                 onClick={() => setAllocMode(allocMode === "strict" ? "lenient" : "strict")}
@@ -695,7 +826,7 @@ const App01: React.FC = () => {
                             style={{ display: "inline-block", width: "100%" }}
                             onDragOver={(e) => {
                               e.preventDefault();
-                              if (dragSourceRef.current && activeTabRef.current !== g.date) {
+                              if ((dragSourceRef.current || stickerTeacherRef.current) && activeTabRef.current !== g.date) {
                                 if (!tabHoverTimer.current) {
                                   tabHoverTimer.current = setTimeout(() => {
                                     setActiveTab(g.date);
@@ -714,16 +845,85 @@ const App01: React.FC = () => {
                             {g.date}（{g.rows.length}场）
                           </span>
                         ),
-                        children: (
-                          <Table
-                            columns={buildColumns()}
-                            dataSource={g.rows}
-                            rowKey="index"
-                            scroll={{ x: 1000 }}
-                            size="small"
-                            pagination={false}
-                          />
-                        ),
+                        children: (() => {
+                          // 计算该日期分组内的少排老师
+                          const dateLoadMap = new Map<string, number>();
+                          for (const r of g.rows) {
+                            if (r.监考1) dateLoadMap.set(r.监考1, (dateLoadMap.get(r.监考1) || 0) + 1);
+                            if (r.监考2) dateLoadMap.set(r.监考2, (dateLoadMap.get(r.监考2) || 0) + 1);
+                          }
+                          // 从全局场次统计中计算少排老师（全局公平线）
+                          const stickers: { name: string; current: number; gap: number; isDept: boolean }[] = [];
+                          for (const [name, info] of teacherInfoMap) {
+                            const current = loadMap.get(name) || 0;
+                            const isDept = deptNames.has(name);
+                            const target = isDept ? Math.max(1, normalMax - 1) : normalMax;
+                            const gap = target - current;
+                            if (gap > 0) {
+                              // 检查当天这个老师是否有空（不在同一时段已有安排）
+                              const daySlots = new Set<string>();
+                              for (const r of g.rows) {
+                                if ((r.监考1 === name || r.监考2 === name)) {
+                                  daySlots.add(r.考试时间);
+                                }
+                              }
+                              // 只要老师没有在当天所有时段都排满，就算可用
+                              const allDaySlots = new Set(g.rows.map(r => r.考试时间));
+                              const available = Array.from(allDaySlots).some(slot => !daySlots.has(slot)) || daySlots.size === 0;
+                              if (available) {
+                                stickers.push({ name, current, gap, isDept });
+                              }
+                            }
+                          }
+                          stickers.sort((a, b) => b.gap - a.gap || a.name.localeCompare(b.name, "zh"));
+
+                          return (
+                            <>
+                              <Table
+                                columns={buildColumns()}
+                                dataSource={g.rows}
+                                rowKey="index"
+                                scroll={{ x: 1000 }}
+                                size="small"
+                                pagination={false}
+                              />
+                              {stickers.length > 0 && (
+                                <div
+                                  style={{
+                                    marginTop: 12,
+                                    padding: "10px 12px",
+                                    background: "#fffbe6",
+                                    border: "1px solid #ffe58f",
+                                    borderRadius: 6,
+                                  }}
+                                >
+                                  <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>
+                                    少排老师（拖拽到单元格替换）：
+                                  </Text>
+                                  <Space size={[4, 4]} wrap>
+                                    {stickers.map((s) => (
+                                      <Tag
+                                        key={s.name}
+                                        color="orange"
+                                        draggable
+                                        onDragStart={(e) => {
+                                          e.dataTransfer.effectAllowed = "move";
+                                          handleStickerDragStart(s.name);
+                                        }}
+                                        onDragEnd={() => {
+                                          stickerTeacherRef.current = null;
+                                        }}
+                                        style={{ cursor: "grab" }}
+                                      >
+                                        {s.name}（{s.current}场，少{s.gap}场）
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })(),
                       }))}
                     />
                   ),

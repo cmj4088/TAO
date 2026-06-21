@@ -59,3 +59,17 @@ class ValidationError(BaseModel):
 
 class ValidateResponse(BaseModel):
     errors: list[ValidationError]
+
+
+class SetRowsRequest(BaseModel):
+    exam_rows: list[ExamRow]
+
+
+class ReplaceRequest(BaseModel):
+    row_index: int
+    position: str  # "监考1" | "监考2"
+    new_teacher: str
+
+
+class ReplaceResponse(BaseModel):
+    exam_rows: list[ExamRow]
