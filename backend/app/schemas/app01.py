@@ -30,11 +30,13 @@ class UploadResponse(BaseModel):
 class AllocateRequest(BaseModel):
     exam_rows: list[ExamRow]
     teachers: list[TeacherInfo]
+    mode: str = "strict"  # "strict" | "lenient"
 
 
 class AllocateResponse(BaseModel):
     exam_rows: list[ExamRow]
     warnings: list[str]
+    teacher_loads: dict[str, int] = {}
 
 
 class SwapRequest(BaseModel):

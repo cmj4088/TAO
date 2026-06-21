@@ -48,6 +48,7 @@ export interface ExamRow {
 export interface AllocateResponse {
   exam_rows: ExamRow[];
   warnings: string[];
+  teacher_loads: Record<string, number>;
 }
 
 export interface ValidationError {

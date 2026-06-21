@@ -135,11 +135,11 @@ def run_allocation(body: AllocateRequest):
     rows = copy.deepcopy(body.exam_rows)
     teachers = body.teachers if body.teachers else (_session_teachers or [])
 
-    result_rows, warnings = allocate(rows, teachers)
+    result_rows, warnings, teacher_loads = allocate(rows, teachers, mode=body.mode)
     _session_exam_rows = result_rows
     _session_teachers = teachers
 
-    return AllocateResponse(exam_rows=result_rows, warnings=warnings)
+    return AllocateResponse(exam_rows=result_rows, warnings=warnings, teacher_loads=teacher_loads)
 
 
 @router.post("/swap", response_model=SwapResponse)
@@ -182,7 +182,7 @@ def run_validation(body: AllocateRequest | None = None):
     if body and body.exam_rows:
         rows = body.exam_rows
 
-    error_dicts = validate(rows, teachers)
+    error_dicts = validate(rows, teachers, mode=body.mode if body else "strict")
     errors = [ValidationError(**e) for e in error_dicts]
     return ValidateResponse(errors=errors)
 

@@ -29,9 +29,12 @@ const App01: React.FC = () => {
   const [examRows, setExamRows] = useState<ExamRow[]>([]);
   const [teachers, setTeachers] = useState<TeacherInfo[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [teacherLoads, setTeacherLoads] = useState<Record<string, number>>({});
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("");
+  const [viewMode, setViewMode] = useState<"date" | "teacher">("date");
+  const [allocMode, setAllocMode] = useState<"strict" | "lenient">("strict");
   const [dragSource, setDragSource] = useState<{
     rowIndex: number;
     field: string;
@@ -231,9 +234,11 @@ const App01: React.FC = () => {
       const allocateRes = await client.post<AllocateResponse>("/api/app01/allocate", {
         exam_rows: examRows,
         teachers,
+        mode: allocMode,
       });
       setExamRows(allocateRes.data.exam_rows);
       setWarnings(allocateRes.data.warnings);
+      setTeacherLoads(allocateRes.data.teacher_loads || {});
 
       // 分配后自动校验
       try {
@@ -276,6 +281,7 @@ const App01: React.FC = () => {
       const res = await client.post("/api/app01/validate", {
         exam_rows: examRows,
         teachers,
+        mode: allocMode,
       });
       setErrors(res.data.errors);
       if (res.data.errors.length === 0) {
@@ -370,6 +376,7 @@ const App01: React.FC = () => {
         const validateRes = await client.post("/api/app01/validate", {
           exam_rows: newRows,
           teachers,
+          mode: allocMode,
         });
         setErrors(validateRes.data.errors);
       } catch {
@@ -402,7 +409,55 @@ const App01: React.FC = () => {
   }
   dateGroups.sort((a, b) => a.date.localeCompare(b.date));
 
-  // 错误行映射
+  // 计算公平线（从考试数据实时统计）
+  const loadMap = new Map<string, number>();
+  for (const r of examRows) {
+    if (r.监考1) loadMap.set(r.监考1, (loadMap.get(r.监考1) || 0) + 1);
+    if (r.监考2) loadMap.set(r.监考2, (loadMap.get(r.监考2) || 0) + 1);
+  }
+  // 区分普通老师和二级机构
+  const deptNames = new Set(teachers.filter((t) => t.tags.some((tag) => tag.includes("二级机构") && tag.includes("少排一场"))).map((t) => t.name));
+  const normalLoads = Array.from(loadMap.entries()).filter(([name]) => !deptNames.has(name)).map(([, c]) => c);
+  const deptLoads = Array.from(loadMap.entries()).filter(([name]) => deptNames.has(name)).map(([, c]) => c);
+  const normalMax = normalLoads.length > 0 ? Math.max(...normalLoads) : 0;
+  const normalMin = normalLoads.length > 0 ? Math.min(...normalLoads) : 0;
+
+  // 按老师汇总
+  const teacherInfoMap = new Map(teachers.map((t) => [t.name, t]));
+  interface TeacherSession {
+    date: string;
+    time: string;
+    location: string;
+    className: string;
+    courseName: string;
+    sessionName: string;
+    type: string; // "监考1" | "监考2"
+  }
+  const teacherSummaryMap = new Map<string, TeacherSession[]>();
+  for (const r of examRows) {
+    const date = extractDate(r.考试时间);
+    const base = { date, time: r.考试时间, location: r.考试地点, className: r.班级名称, courseName: r.课程名称, sessionName: r.场次 };
+    if (r.监考1) {
+      if (!teacherSummaryMap.has(r.监考1)) teacherSummaryMap.set(r.监考1, []);
+      teacherSummaryMap.get(r.监考1)!.push({ ...base, type: "监考1" });
+    }
+    if (r.监考2) {
+      if (!teacherSummaryMap.has(r.监考2)) teacherSummaryMap.set(r.监考2, []);
+      teacherSummaryMap.get(r.监考2)!.push({ ...base, type: "监考2" });
+    }
+  }
+  const teacherSummaries = Array.from(teacherSummaryMap.entries())
+    .map(([name, sessions]) => {
+      const info = teacherInfoMap.get(name);
+      return {
+        name,
+        department: info?.department || "",
+        tags: info?.tags || [],
+        count: sessions.length,
+        sessions,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "zh"));
   const errorMap = new Map<string, ValidationError[]>();
   for (const e of errors) {
     const key = `${e.row_index}-${e.field}`;
@@ -581,6 +636,12 @@ const App01: React.FC = () => {
               >
                 执行分配
               </Button>
+              <Button
+                type={allocMode === "strict" ? "default" : "dashed"}
+                onClick={() => setAllocMode(allocMode === "strict" ? "lenient" : "strict")}
+              >
+                模式：{allocMode === "strict" ? "严格（领导不排）" : "宽松（领导参与）"}
+              </Button>
               <Button icon={<ExportOutlined />} onClick={doExport}>
                 导出 Excel
               </Button>
@@ -616,46 +677,132 @@ const App01: React.FC = () => {
             )}
 
             <Tabs
-              activeKey={activeTab || dateGroups[0]?.date}
-              onChange={setActiveTab}
-              destroyInactiveTabPane={false}
-              items={dateGroups.map((g) => ({
-                key: g.date,
-                label: (
-                  <span
-                    style={{ display: "inline-block", width: "100%" }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      if (dragSourceRef.current && activeTabRef.current !== g.date) {
-                        if (!tabHoverTimer.current) {
-                          tabHoverTimer.current = setTimeout(() => {
-                            setActiveTab(g.date);
-                            tabHoverTimer.current = null;
-                          }, 600);
-                        }
-                      }
-                    }}
-                    onDragLeave={() => {
-                      if (tabHoverTimer.current) {
-                        clearTimeout(tabHoverTimer.current);
-                        tabHoverTimer.current = null;
-                      }
-                    }}
-                  >
-                    {g.date}（{g.rows.length}场）
-                  </span>
-                ),
-                children: (
-                  <Table
-                    columns={buildColumns()}
-                    dataSource={g.rows}
-                    rowKey="index"
-                    scroll={{ x: 1000 }}
-                    size="small"
-                    pagination={false}
-                  />
-                ),
-              }))}
+              activeKey={viewMode}
+              onChange={(key) => setViewMode(key as "date" | "teacher")}
+              items={[
+                {
+                  key: "date",
+                  label: "按日期查看",
+                  children: (
+                    <Tabs
+                      activeKey={activeTab || dateGroups[0]?.date}
+                      onChange={setActiveTab}
+                      destroyInactiveTabPane={false}
+                      items={dateGroups.map((g) => ({
+                        key: g.date,
+                        label: (
+                          <span
+                            style={{ display: "inline-block", width: "100%" }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              if (dragSourceRef.current && activeTabRef.current !== g.date) {
+                                if (!tabHoverTimer.current) {
+                                  tabHoverTimer.current = setTimeout(() => {
+                                    setActiveTab(g.date);
+                                    tabHoverTimer.current = null;
+                                  }, 600);
+                                }
+                              }
+                            }}
+                            onDragLeave={() => {
+                              if (tabHoverTimer.current) {
+                                clearTimeout(tabHoverTimer.current);
+                                tabHoverTimer.current = null;
+                              }
+                            }}
+                          >
+                            {g.date}（{g.rows.length}场）
+                          </span>
+                        ),
+                        children: (
+                          <Table
+                            columns={buildColumns()}
+                            dataSource={g.rows}
+                            rowKey="index"
+                            scroll={{ x: 1000 }}
+                            size="small"
+                            pagination={false}
+                          />
+                        ),
+                      }))}
+                    />
+                  ),
+                },
+                {
+                  key: "teacher",
+                  label: "按老师查看",
+                  children: (
+                    <Table
+                      dataSource={teacherSummaries}
+                      rowKey="name"
+                      size="small"
+                      pagination={false}
+                      expandable={{
+                        expandedRowRender: (record) => (
+                          <Table
+                            dataSource={record.sessions}
+                            rowKey={(_, i) => String(i)}
+                            size="small"
+                            pagination={false}
+                            columns={[
+                              { title: "日期", dataIndex: "date", width: 110 },
+                              { title: "时间", dataIndex: "time", width: 180 },
+                              { title: "地点", dataIndex: "location", width: 110, ellipsis: true },
+                              { title: "班级", dataIndex: "className", width: 160, ellipsis: true },
+                              { title: "课程", dataIndex: "courseName", width: 200, ellipsis: true },
+                              { title: "场次", dataIndex: "sessionName", width: 60 },
+                              { title: "类型", dataIndex: "type", width: 70 },
+                            ]}
+                          />
+                        ),
+                        rowExpandable: (record) => record.count > 0,
+                      }}
+                      columns={[
+                        { title: "教师姓名", dataIndex: "name", width: 100, sorter: (a: any, b: any) => a.name.localeCompare(b.name, "zh") },
+                        {
+                          title: "部门/岗位",
+                          dataIndex: "department",
+                          width: 180,
+                          ellipsis: true,
+                          render: (dept: string) => dept ? <Text type="secondary" style={{ fontSize: 13 }}>{dept}</Text> : <Text type="secondary">—</Text>,
+                        },
+                        {
+                          title: "标记",
+                          dataIndex: "tags",
+                          width: 180,
+                          render: (tags: string[]) => (
+                            <Space size={4} wrap>
+                              {tags.length > 0
+                                ? tags.map((t) => <Tag key={t} color="orange">{t}</Tag>)
+                                : <Tag color="default">普通</Tag>}
+                            </Space>
+                          ),
+                        },
+                        {
+                          title: `监考场次（普通: ${normalMin}~${normalMax}场，二级: ≤${Math.max(1, normalMax - 1)}场）`,
+                          dataIndex: "count",
+                          width: 260,
+                          sorter: (a: any, b: any) => a.count - b.count,
+                          render: (count: number, record: any) => {
+                            const isDept = deptNames.has(record.name);
+                            let color = "green";
+                            if (isDept) {
+                              const deptCap = Math.max(1, normalMax - 1);
+                              if (count > deptCap) color = "red";
+                              else if (count === deptCap) color = "green";
+                              else color = "orange";
+                            } else {
+                              if (count < normalMin) color = "orange";
+                              else if (count > normalMax) color = "red";
+                            }
+                            return <Tag color={color}>{count} 场</Tag>;
+                          },
+                        },
+                      ]}
+                    />
+                  ),
+                },
+              ]}
             />
           </>
         )}
