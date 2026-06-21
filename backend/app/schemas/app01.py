@@ -30,17 +30,20 @@ class UploadResponse(BaseModel):
 class AllocateRequest(BaseModel):
     exam_rows: list[ExamRow]
     teachers: list[TeacherInfo]
+    mode: str = "strict"  # "strict" | "lenient"
 
 
 class AllocateResponse(BaseModel):
     exam_rows: list[ExamRow]
     warnings: list[str]
+    teacher_loads: dict[str, int] = {}
 
 
 class SwapRequest(BaseModel):
-    row_index: int
-    position: str  # "监考1" | "监考2"
-    new_teacher: str
+    source_row_index: int
+    source_position: str  # "监考1" | "监考2"
+    target_row_index: int
+    target_position: str  # "监考1" | "监考2"
 
 
 class SwapResponse(BaseModel):
@@ -56,20 +59,3 @@ class ValidationError(BaseModel):
 
 class ValidateResponse(BaseModel):
     errors: list[ValidationError]
-
-
-class AiAffectedCell(BaseModel):
-    row_index: int
-    field: str  # "监考1" | "监考2"
-
-
-class AiReviewFinding(BaseModel):
-    rule: str  # "time_overlap" | "must_invigilate_own_class"
-    teacher: str
-    description: str
-    affected_cells: list[AiAffectedCell] = []
-
-
-class AiReviewResponse(BaseModel):
-    configured: bool
-    findings: list[AiReviewFinding] = []

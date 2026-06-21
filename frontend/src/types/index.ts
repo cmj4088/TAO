@@ -48,6 +48,7 @@ export interface ExamRow {
 export interface AllocateResponse {
   exam_rows: ExamRow[];
   warnings: string[];
+  teacher_loads: Record<string, number>;
 }
 
 export interface ValidationError {
@@ -61,21 +62,75 @@ export interface ValidateResponse {
   errors: ValidationError[];
 }
 
-// ===== app01 AI审查类型 =====
+// ===== app02 文件审查类型 =====
 
-export interface AiAffectedCell {
-  row_index: number;
-  field: string;
+export interface ReviewIssue {
+  type: string;
+  detail: string;
+  location: string;
+  snippet: string;
+  severity: "error" | "warning";
 }
 
-export interface AiReviewFinding {
-  rule: string;
+export interface FileReviewResult {
+  file_id: string;
+  filename: string;
+  file_type: string;
   teacher: string;
-  description: string;
-  affected_cells: AiAffectedCell[];
+  passed: boolean;
+  fonts_used: string[];
+  issues: ReviewIssue[];
 }
 
-export interface AiReviewResponse {
-  configured: boolean;
-  findings: AiReviewFinding[];
+export interface ReviewResponse {
+  mode: "single" | "batch";
+  results: FileReviewResult[];
+  summary: string;
+  ai_task_id?: string;
+}
+
+export interface UploadedFileInfo {
+  file_id: string;
+  filename: string;
+  file_type: string;
+  is_doc: boolean;
+  converted: boolean;
+}
+
+export interface UploadResponse {
+  files: UploadedFileInfo[];
+}
+
+// ===== app02 AI审查类型 =====
+
+export interface AiReviewFindingApp02 {
+  rule: string;
+  severity: "error" | "warning";
+  description: string;
+  location: string;
+  suggestion: string;
+  file_id: string;
+  filename: string;
+}
+
+export interface AiFileProgress {
+  file_id: string;
+  filename: string;
+  status: "waiting" | "reviewing" | "done";
+  findings: AiReviewFindingApp02[];
+  extracted_info?: {
+    teacher?: string | null;
+    course?: string | null;
+    class_name?: string | null;
+  };
+}
+
+export interface AiReviewProgressApp02 {
+  status: "running" | "done" | "error";
+  total: number;
+  completed: number;
+  current_file_id: string | null;
+  files: AiFileProgress[];
+  findings: AiReviewFindingApp02[];
+  error: string | null;
 }

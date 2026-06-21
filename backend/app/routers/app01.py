@@ -2,7 +2,6 @@
 import io
 import re
 import copy
-from typing import Any
 from urllib.parse import quote
 
 import openpyxl
@@ -19,13 +18,8 @@ from app.schemas.app01 import (
     SwapResponse,
     ValidateResponse,
     ValidationError,
-    AiReviewResponse,
-    AiReviewFinding,
-    AiAffectedCell,
 )
 from app.services.invigilator import allocate, validate
-from app.services.ai_reviewer import review as ai_review
-from app.config import ConfigManager
 
 router = APIRouter(prefix="/api/app01", tags=["app01"])
 
@@ -141,26 +135,35 @@ def run_allocation(body: AllocateRequest):
     rows = copy.deepcopy(body.exam_rows)
     teachers = body.teachers if body.teachers else (_session_teachers or [])
 
-    result_rows, warnings = allocate(rows, teachers)
+    result_rows, warnings, teacher_loads = allocate(rows, teachers, mode=body.mode)
     _session_exam_rows = result_rows
     _session_teachers = teachers
 
-    return AllocateResponse(exam_rows=result_rows, warnings=warnings)
+    return AllocateResponse(exam_rows=result_rows, warnings=warnings, teacher_loads=teacher_loads)
 
 
 @router.post("/swap", response_model=SwapResponse)
 def swap_teacher(body: SwapRequest):
-    """手动替换监考老师"""
+    """交换两个监考格子的老师"""
     global _session_exam_rows
 
     if not _session_exam_rows:
         raise HTTPException(400, "请先上传文件并执行分配")
 
     rows = copy.deepcopy(_session_exam_rows)
+    src_val = None
+    tgt_val = None
     for row in rows:
-        if row.index == body.row_index:
-            setattr(row, body.position, body.new_teacher if body.new_teacher else None)
-            break
+        if row.index == body.source_row_index:
+            src_val = getattr(row, body.source_position)
+        if row.index == body.target_row_index:
+            tgt_val = getattr(row, body.target_position)
+
+    for row in rows:
+        if row.index == body.source_row_index:
+            setattr(row, body.source_position, tgt_val)
+        if row.index == body.target_row_index:
+            setattr(row, body.target_position, src_val)
 
     _session_exam_rows = rows
     return SwapResponse(exam_rows=rows)
@@ -179,7 +182,7 @@ def run_validation(body: AllocateRequest | None = None):
     if body and body.exam_rows:
         rows = body.exam_rows
 
-    error_dicts = validate(rows, teachers)
+    error_dicts = validate(rows, teachers, mode=body.mode if body else "strict")
     errors = [ValidationError(**e) for e in error_dicts]
     return ValidateResponse(errors=errors)
 
@@ -216,44 +219,3 @@ def export_excel():
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
         },
     )
-
-
-@router.get("/ai-review/status")
-def ai_review_status():
-    """检查 AI 审查是否可用"""
-    api_key = ConfigManager.get("llm_key", "")
-    configured = bool(api_key)
-    return {"configured": configured}
-
-
-@router.post("/ai-review", response_model=AiReviewResponse)
-async def run_ai_review(body: AllocateRequest | None = None):
-    """AI 审查当前分配结果"""
-    rows = _session_exam_rows
-    if not rows:
-        raise HTTPException(400, "请先上传文件并执行分配")
-
-    if body and body.exam_rows:
-        rows = body.exam_rows
-
-    api_key = ConfigManager.get("llm_key", "")
-    if not api_key:
-        return AiReviewResponse(configured=False, findings=[])
-
-    try:
-        finding_dicts, _ = await ai_review(rows, api_key)
-        findings = [
-            AiReviewFinding(
-                rule=f["rule"],
-                teacher=f["teacher"],
-                description=f["description"],
-                affected_cells=[
-                    AiAffectedCell(row_index=c["row_index"], field=c["field"])
-                    for c in f.get("affected_cells", [])
-                ],
-            )
-            for f in finding_dicts
-        ]
-        return AiReviewResponse(configured=True, findings=findings)
-    except Exception as e:
-        raise HTTPException(500, f"AI审查失败：{str(e)}")
