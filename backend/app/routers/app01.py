@@ -16,6 +16,9 @@ from app.schemas.app01 import (
     AllocateResponse,
     SwapRequest,
     SwapResponse,
+    ReplaceRequest,
+    ReplaceResponse,
+    SetRowsRequest,
     ValidateResponse,
     ValidationError,
 )
@@ -167,6 +170,37 @@ def swap_teacher(body: SwapRequest):
 
     _session_exam_rows = rows
     return SwapResponse(exam_rows=rows)
+
+
+@router.post("/replace", response_model=ReplaceResponse)
+def replace_teacher(body: ReplaceRequest):
+    """将指定格子的监考老师替换为新老师"""
+    global _session_exam_rows
+
+    if not _session_exam_rows:
+        raise HTTPException(400, "请先上传文件并执行分配")
+
+    rows = copy.deepcopy(_session_exam_rows)
+    found = False
+    for row in rows:
+        if row.index == body.row_index:
+            setattr(row, body.position, body.new_teacher if body.new_teacher else None)
+            found = True
+            break
+
+    if not found:
+        raise HTTPException(400, f"未找到行 index={body.row_index}")
+
+    _session_exam_rows = rows
+    return ReplaceResponse(exam_rows=rows)
+
+
+@router.post("/set-rows", response_model=list[ExamRow])
+def set_rows(body: SetRowsRequest):
+    """批量替换所有考试行（用于撤销等场景）"""
+    global _session_exam_rows
+    _session_exam_rows = copy.deepcopy(body.exam_rows)
+    return _session_exam_rows
 
 
 @router.post("/validate", response_model=ValidateResponse)
