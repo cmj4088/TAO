@@ -1,6 +1,5 @@
 """app01 监考分配 API"""
 import io
-import re
 import copy
 from urllib.parse import quote
 
@@ -71,7 +70,7 @@ def _parse_exam_schedule(file_content: bytes) -> list[ExamRow]:
 
 
 def _parse_contact_list(file_content: bytes) -> list[TeacherInfo]:
-    """解析通讯录"""
+    """解析通讯录（新版4列：岗位、姓名、安排场次、分组）"""
     wb = openpyxl.load_workbook(io.BytesIO(file_content))
     ws = wb[wb.sheetnames[0]]
     teachers = []
@@ -83,14 +82,24 @@ def _parse_contact_list(file_content: bytes) -> list[TeacherInfo]:
         if not name:
             continue
 
-        tag = str(row[7]).strip() if row[7] else ""
-        tags = [tag] if tag else []
+        department = str(row[0]).strip() if row[0] else ""
+
+        # C列：安排场次
+        slots = 0
+        if row[2] is not None:
+            try:
+                slots = int(row[2])
+            except (ValueError, TypeError):
+                slots = 0
+
+        # D列：分组（保留大小写）
+        group = str(row[3]).strip() if row[3] else ""
 
         teachers.append(TeacherInfo(
             name=name,
-            department=str(row[0]).strip() if row[0] else "",
-            tags=tags,
-            excluded_dates=[],
+            department=department,
+            slots=slots,
+            group=group,
         ))
     return teachers
 
@@ -138,7 +147,7 @@ def run_allocation(body: AllocateRequest):
     rows = copy.deepcopy(body.exam_rows)
     teachers = body.teachers if body.teachers else (_session_teachers or [])
 
-    result_rows, warnings, teacher_loads = allocate(rows, teachers, mode=body.mode)
+    result_rows, warnings, teacher_loads = allocate(rows, teachers)
     _session_exam_rows = result_rows
     _session_teachers = teachers
 
@@ -216,7 +225,7 @@ def run_validation(body: AllocateRequest | None = None):
     if body and body.exam_rows:
         rows = body.exam_rows
 
-    error_dicts = validate(rows, teachers, mode=body.mode if body else "strict")
+    error_dicts = validate(rows, teachers)
     errors = [ValidationError(**e) for e in error_dicts]
     return ValidateResponse(errors=errors)
 

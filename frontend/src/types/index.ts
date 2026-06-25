@@ -28,8 +28,8 @@ export interface VersionInfo {
 export interface TeacherInfo {
   name: string;
   department: string;
-  tags: string[];
-  excluded_dates: string[];
+  slots: number;
+  group: string;
 }
 
 export interface ExamRow {
