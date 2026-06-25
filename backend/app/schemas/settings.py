@@ -24,3 +24,7 @@ class AppInfo(BaseModel):
 
 class VersionInfo(BaseModel):
     version: str
+
+
+class App02Settings(BaseModel):
+    ai_concurrency: int = 1

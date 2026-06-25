@@ -9,18 +9,23 @@ interface SettingsState {
   llmUrl: string;
   llmKey: string;
   loading: boolean;
+  app02AiConcurrency: number;
   setTheme: (t: ThemeMode) => void;
   setLlmConfig: (url: string, key: string) => void;
   saveLlmConfig: () => Promise<void>;
   loadFromServer: () => Promise<void>;
+  setApp02AiConcurrency: (n: number) => void;
+  saveApp02Settings: () => Promise<void>;
+  loadApp02Settings: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   theme: "light",
-  apiBase: "http://localhost:8000",
+  apiBase: "http://localhost:8002",
   llmUrl: "",
   llmKey: "",
   loading: false,
+  app02AiConcurrency: 1,
 
   setTheme: (theme) => set({ theme }),
 
@@ -38,6 +43,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ llmUrl: res.data.url, llmKey: res.data.key, loading: false });
     } catch {
       set({ loading: false });
+    }
+  },
+
+  setApp02AiConcurrency: (n) => set({ app02AiConcurrency: Math.max(1, Math.min(10, n)) }),
+
+  saveApp02Settings: async () => {
+    const { app02AiConcurrency } = get();
+    await client.put("/api/app02/settings", { ai_concurrency: app02AiConcurrency });
+  },
+
+  loadApp02Settings: async () => {
+    try {
+      const res = await client.get("/api/app02/settings");
+      set({ app02AiConcurrency: res.data.ai_concurrency });
+    } catch {
+      // 保持默认值
     }
   },
 }));

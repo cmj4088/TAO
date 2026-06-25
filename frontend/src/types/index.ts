@@ -28,8 +28,8 @@ export interface VersionInfo {
 export interface TeacherInfo {
   name: string;
   department: string;
-  tags: string[];
-  excluded_dates: string[];
+  slots: number;
+  group: string;
 }
 
 export interface ExamRow {
@@ -134,3 +134,34 @@ export interface AiReviewProgressApp02 {
   findings: AiReviewFindingApp02[];
   error: string | null;
 }
+
+// ===== app02 SSE 流式事件 =====
+
+export interface SseTokenEvent {
+  file_id: string;
+  content: string;
+}
+
+export interface SseReasoningEvent {
+  file_id: string;
+  content: string;
+}
+
+export interface SseFileDoneEvent {
+  file_id: string;
+  findings: AiReviewFindingApp02[];
+  extracted_info: {
+    teacher?: string | null;
+    course?: string | null;
+    class_name?: string | null;
+  };
+}
+
+export interface SseFileErrorEvent {
+  file_id: string;
+  error: string;
+}
+
+// ===== app02 贴纸分级 =====
+
+export type StickerType = "pass" | "fail" | "ambiguous";
