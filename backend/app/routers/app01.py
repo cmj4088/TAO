@@ -2,7 +2,6 @@
 import io
 import re
 import copy
-from typing import Any
 from urllib.parse import quote
 
 import openpyxl
@@ -17,6 +16,9 @@ from app.schemas.app01 import (
     AllocateResponse,
     SwapRequest,
     SwapResponse,
+    ReplaceRequest,
+    ReplaceResponse,
+    SetRowsRequest,
     ValidateResponse,
     ValidationError,
 )
@@ -136,29 +138,69 @@ def run_allocation(body: AllocateRequest):
     rows = copy.deepcopy(body.exam_rows)
     teachers = body.teachers if body.teachers else (_session_teachers or [])
 
-    result_rows, warnings = allocate(rows, teachers)
+    result_rows, warnings, teacher_loads = allocate(rows, teachers, mode=body.mode)
     _session_exam_rows = result_rows
     _session_teachers = teachers
 
-    return AllocateResponse(exam_rows=result_rows, warnings=warnings)
+    return AllocateResponse(exam_rows=result_rows, warnings=warnings, teacher_loads=teacher_loads)
 
 
 @router.post("/swap", response_model=SwapResponse)
 def swap_teacher(body: SwapRequest):
-    """手动替换监考老师"""
+    """交换两个监考格子的老师"""
     global _session_exam_rows
 
     if not _session_exam_rows:
         raise HTTPException(400, "请先上传文件并执行分配")
 
     rows = copy.deepcopy(_session_exam_rows)
+    src_val = None
+    tgt_val = None
     for row in rows:
-        if row.index == body.row_index:
-            setattr(row, body.position, body.new_teacher if body.new_teacher else None)
-            break
+        if row.index == body.source_row_index:
+            src_val = getattr(row, body.source_position)
+        if row.index == body.target_row_index:
+            tgt_val = getattr(row, body.target_position)
+
+    for row in rows:
+        if row.index == body.source_row_index:
+            setattr(row, body.source_position, tgt_val)
+        if row.index == body.target_row_index:
+            setattr(row, body.target_position, src_val)
 
     _session_exam_rows = rows
     return SwapResponse(exam_rows=rows)
+
+
+@router.post("/replace", response_model=ReplaceResponse)
+def replace_teacher(body: ReplaceRequest):
+    """将指定格子的监考老师替换为新老师"""
+    global _session_exam_rows
+
+    if not _session_exam_rows:
+        raise HTTPException(400, "请先上传文件并执行分配")
+
+    rows = copy.deepcopy(_session_exam_rows)
+    found = False
+    for row in rows:
+        if row.index == body.row_index:
+            setattr(row, body.position, body.new_teacher if body.new_teacher else None)
+            found = True
+            break
+
+    if not found:
+        raise HTTPException(400, f"未找到行 index={body.row_index}")
+
+    _session_exam_rows = rows
+    return ReplaceResponse(exam_rows=rows)
+
+
+@router.post("/set-rows", response_model=list[ExamRow])
+def set_rows(body: SetRowsRequest):
+    """批量替换所有考试行（用于撤销等场景）"""
+    global _session_exam_rows
+    _session_exam_rows = copy.deepcopy(body.exam_rows)
+    return _session_exam_rows
 
 
 @router.post("/validate", response_model=ValidateResponse)
@@ -174,7 +216,7 @@ def run_validation(body: AllocateRequest | None = None):
     if body and body.exam_rows:
         rows = body.exam_rows
 
-    error_dicts = validate(rows, teachers)
+    error_dicts = validate(rows, teachers, mode=body.mode if body else "strict")
     errors = [ValidationError(**e) for e in error_dicts]
     return ValidateResponse(errors=errors)
 
