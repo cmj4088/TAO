@@ -89,7 +89,6 @@ def extract_template_profile(template_path: str) -> dict:
 
 
 def review_format(filepath: str, template_profile: dict) -> tuple[list[ReviewIssue], set[str]]:
-    """格式检查：字体偏离、字号偏离、字体过多、对齐偏离"""
     doc = Document(filepath)
     allowed_fonts = template_profile.get("允许的字体", set())
     allowed_sizes = template_profile.get("允许的字号", set())
@@ -195,7 +194,6 @@ def review_format(filepath: str, template_profile: dict) -> tuple[list[ReviewIss
 
 
 def review_single(filepath: str, filename: str) -> FileReviewResult:
-    """审查单个文件（仅格式检查，课时/教师/错别字等交给AI）"""
     file_type = classify_template(filename)
     teacher = extract_teacher_from_filename(filename)
 
@@ -225,7 +223,6 @@ def review_single(filepath: str, filename: str) -> FileReviewResult:
     profile = extract_template_profile(template_path)
     format_issues, fonts_used = review_format(filepath, profile)
 
-    # 格式问题都是 warning 级别，不阻断通过
     return FileReviewResult(
         file_id="",
         filename=filename,

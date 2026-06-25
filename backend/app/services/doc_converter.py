@@ -13,7 +13,6 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 
 def _find_libreoffice() -> str | None:
-    """查找 LibreOffice 可执行文件"""
     common_paths = [
         r"C:\Program Files\LibreOffice\program\soffice.exe",
         r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
@@ -21,7 +20,6 @@ def _find_libreoffice() -> str | None:
     for p in common_paths:
         if os.path.exists(p):
             return p
-    # 试试 PATH 里有没有
     soffice = shutil.which("soffice")
     if soffice:
         return soffice
@@ -29,9 +27,6 @@ def _find_libreoffice() -> str | None:
 
 
 def convert_with_libreoffice(filepath: str, fmt: str) -> str | None:
-    """用 LibreOffice 转换文件格式
-    fmt: "docx" 或 "pdf"
-    """
     soffice = _find_libreoffice()
     if not soffice:
         return None
@@ -53,7 +48,6 @@ def convert_with_libreoffice(filepath: str, fmt: str) -> str | None:
         if os.path.exists(converted):
             return converted
 
-        # LibreOffice 有时输出文件名和预期不同，遍历找
         for f in os.listdir(out_dir):
             if f.lower().endswith(f".{fmt}"):
                 return os.path.join(out_dir, f)
@@ -63,7 +57,6 @@ def convert_with_libreoffice(filepath: str, fmt: str) -> str | None:
 
 
 def convert_with_word_com(filepath: str, fmt: str) -> str | None:
-    """用 Word COM 转换文件格式"""
     import pythoncom
     import win32com.client
 
@@ -100,7 +93,6 @@ def convert_with_word_com(filepath: str, fmt: str) -> str | None:
 
 
 def convert_doc_to_docx(filepath: str) -> str | None:
-    """.doc → .docx，优先 LibreOffice，降级 Word COM"""
     result = convert_with_libreoffice(filepath, "docx")
     if result:
         return result
@@ -108,7 +100,6 @@ def convert_doc_to_docx(filepath: str) -> str | None:
 
 
 def convert_docx_to_pdf(filepath: str) -> str | None:
-    """docx → PDF，优先 LibreOffice，降级 Word COM"""
     result = convert_with_libreoffice(filepath, "pdf")
     if result:
         return result
@@ -116,7 +107,6 @@ def convert_docx_to_pdf(filepath: str) -> str | None:
 
 
 def cleanup_temp(subdir: str):
-    """清理临时目录"""
     path = os.path.join(TEMP_DIR, subdir)
     if os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)

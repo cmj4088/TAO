@@ -3,9 +3,12 @@ import io
 import os
 import re
 import uuid
+import json
+import asyncio
 import threading
 import tempfile
 import traceback
+from collections import defaultdict
 from urllib.parse import quote
 
 import openpyxl
@@ -19,9 +22,9 @@ from app.schemas.app02 import (
     UploadResponse,
     ReviewResponse,
 )
-from app.services.doc_reviewer import review_single, classify_template
+from app.services.doc_reviewer import classify_template
 from app.services.doc_converter import convert_doc_to_docx, convert_docx_to_pdf
-from app.services.ai_reviewer_app02 import review as ai_review
+from app.services.ai_reviewer_app02 import review_stream
 from app.config import ConfigManager
 
 router = APIRouter(prefix="/api/app02", tags=["app02"])
@@ -33,8 +36,8 @@ _session_files: dict[str, dict] = {}
 _session_results: list[FileReviewResult] = []
 _reviewed_file_ids: set[str] = set()
 
-# AI审查后台任务存储
 _ai_tasks: dict[str, dict] = {}
+_stream_queues: dict[str, dict[str, asyncio.Queue]] = defaultdict(dict)
 
 
 @router.get("/status")
@@ -44,7 +47,6 @@ def get_status():
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_files(files: list[UploadFile] = File(...)):
-    """上传文件（累加模式，不清空已有文件）"""
     global _session_files
 
     infos: list[UploadedFileInfo] = []
@@ -88,24 +90,22 @@ async def upload_files(files: list[UploadFile] = File(...)):
 
 @router.post("/reset")
 def reset_session():
-    """清空所有上传文件和审查结果"""
-    global _session_files, _session_results, _reviewed_file_ids, _ai_tasks
+    global _session_files, _session_results, _reviewed_file_ids, _ai_tasks, _stream_queues
     _session_files.clear()
     _session_results.clear()
     _reviewed_file_ids.clear()
     _ai_tasks.clear()
+    _stream_queues.clear()
     return {"status": "ok"}
 
 
 @router.post("/review", response_model=ReviewResponse)
 def run_review():
-    """执行审查（仅审查未审过的文件，审完后自动启动AI审查）"""
     global _session_files, _session_results, _reviewed_file_ids
 
     if not _session_files:
         raise HTTPException(400, "请先上传文件")
 
-    # 找出未审查过的文件
     new_file_ids = [fid for fid in _session_files if fid not in _reviewed_file_ids]
     if not new_file_ids:
         raise HTTPException(400, "所有文件已审查完毕，没有新增文件需要审查")
@@ -141,20 +141,26 @@ def run_review():
                 _reviewed_file_ids.add(file_id)
                 continue
 
-        result = review_single(filepath, info["filename"])
-        result.file_id = file_id
+        result = FileReviewResult(
+            file_id=file_id,
+            filename=info["filename"],
+            file_type=info["file_type"],
+            teacher="未知",
+            passed=True,
+            fonts_used=[],
+            issues=[],
+        )
         new_results.append(result)
         _reviewed_file_ids.add(file_id)
 
-    # 合并到总结果
-    _session_results.extend(new_results)
+    _session_results = new_results
+
+    ai_task_id = str(uuid.uuid4())
+    _ai_tasks[ai_task_id] = {"status": "starting", "total": len(new_file_ids), "completed": 0, "files": [], "findings": [], "error": None}
 
     mode = "single" if len(_session_results) == 1 else "batch"
-    passed_count = sum(1 for r in _session_results if r.passed)
-    summary = f"共审查 {len(_session_results)} 个文件，通过 {passed_count} 个，不通过 {len(_session_results) - passed_count} 个"
+    summary = f"共 {len(_session_results)} 个文件，AI 审查已启动，请等待分析完成"
 
-    # 自动启动 AI 审查（仅审查新增文件）
-    ai_task_id = str(uuid.uuid4())
     t = threading.Thread(
         target=_run_ai_review_task,
         args=(ai_task_id, new_file_ids),
@@ -167,7 +173,6 @@ def run_review():
 
 @router.get("/preview/{file_id}")
 def preview_file(file_id: str):
-    """返回 PDF 预览"""
     global _session_files
 
     if file_id not in _session_files:
@@ -198,7 +203,6 @@ def preview_file(file_id: str):
 
 @router.get("/export")
 def export_excel():
-    """导出汇总 Excel"""
     global _session_results
 
     if not _session_results:
@@ -244,43 +248,36 @@ def export_excel():
     )
 
 
-# ===== AI 审查 =====
+# ===== AI 审查（异步并发流式） =====
 
 def _run_ai_review_task(task_id: str, file_ids: list[str]):
-    """后台线程执行 AI审查，实时更新进度"""
-    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_run_ai_review_task_async(task_id, file_ids))
+    except Exception:
+        traceback.print_exc()
+    finally:
+        loop.close()
 
-    # 初始化进度结构：包含所有文件的进度（已审过的标记为done，新增的标记为waiting）
+
+async def _run_ai_review_task_async(task_id: str, file_ids: list[str]):
+    global _session_files, _ai_tasks
+
+    concurrency = int(ConfigManager.get("app02_ai_concurrency", "1"))
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+
     all_files = []
-    for fid, info in _session_files.items():
-        if fid in file_ids:
+    for fid in file_ids:
+        info = _session_files.get(fid)
+        if info:
             all_files.append({
                 "file_id": fid,
                 "filename": info["filename"],
                 "status": "waiting",
                 "findings": [],
             })
-        else:
-            # 之前已审过的文件，尝试复用已有AI结果
-            existing_findings = []
-            existing_info = {}
-            for old_task in _ai_tasks.values():
-                for old_file in old_task.get("files", []):
-                    if old_file["file_id"] == fid and old_file.get("findings"):
-                        existing_findings = old_file["findings"]
-                        existing_info = old_file.get("extracted_info", {})
-                        break
-                if existing_findings:
-                    break
-            all_files.append({
-                "file_id": fid,
-                "filename": info["filename"],
-                "status": "done" if existing_findings else "waiting",
-                "findings": existing_findings,
-                "extracted_info": existing_info,
-            })
 
-    # 收集已有 findings
     all_findings: list[dict] = []
     for fe in all_files:
         for f in fe.get("findings", []):
@@ -298,47 +295,147 @@ def _run_ai_review_task(task_id: str, file_ids: list[str]):
         "error": None,
     }
 
-    for fe in all_files:
-        if fe["status"] == "done":
-            continue
+    file_queues: dict[str, asyncio.Queue] = {fid: asyncio.Queue() for fid in file_ids}
+    _stream_queues[task_id] = file_queues
 
+    async def review_one_file(fe: dict):
         fid = fe["file_id"]
         info = _session_files.get(fid)
         if not info:
             fe["status"] = "done"
             _ai_tasks[task_id]["completed"] += 1
-            continue
+            await file_queues[fid].put(("file_done", {"file_id": fid, "findings": [], "extracted_info": {}}))
+            return
 
         filepath = info.get("converted_path") or info["filepath"]
         if not os.path.exists(filepath):
             fe["status"] = "done"
             _ai_tasks[task_id]["completed"] += 1
-            continue
+            await file_queues[fid].put(("file_done", {"file_id": fid, "findings": [], "extracted_info": {}}))
+            return
 
         fe["status"] = "reviewing"
         _ai_tasks[task_id]["current_file_id"] = fid
 
         try:
-            findings, extracted_info, raw_text = asyncio.run(ai_review(filepath, info["filename"]))
-            for f in findings:
-                f["file_id"] = fid
-                f["filename"] = info["filename"]
-            fe["findings"] = findings
-            fe["extracted_info"] = extracted_info
-            all_findings.extend(findings)
-            print(f"[AI审查] {info['filename']}: 发现 {len(findings)} 个问题, 提取信息: {extracted_info}")
+            async with semaphore:
+                async for event_type, data in review_stream(filepath, info["filename"]):
+                    if event_type == "reasoning":
+                        await file_queues[fid].put(("reasoning", {"file_id": fid, "content": data}))
+                    elif event_type == "token":
+                        await file_queues[fid].put(("token", {"file_id": fid, "content": data}))
+                    elif event_type == "done":
+                        findings, extracted_info, _raw_text = data
+                        for f in findings:
+                            f["file_id"] = fid
+                            f["filename"] = info["filename"]
+                        fe["findings"] = findings
+                        fe["extracted_info"] = extracted_info
+                        all_findings.extend(findings)
+                        await file_queues[fid].put(("file_done", {
+                            "file_id": fid,
+                            "findings": findings,
+                            "extracted_info": extracted_info,
+                        }))
+                    elif event_type == "error":
+                        await file_queues[fid].put(("file_error", {"file_id": fid, "error": str(data)}))
         except Exception as e:
-            print(f"[AI审查] {info['filename']} 失败: {type(e).__name__}: {e}")
             traceback.print_exc()
             fe["findings"] = []
             fe["extracted_info"] = {}
+            try:
+                await file_queues[fid].put(("file_error", {"file_id": fid, "error": str(e)}))
+            except Exception:
+                pass
 
         fe["status"] = "done"
         _ai_tasks[task_id]["completed"] += 1
 
+    tasks_to_review = [fe for fe in all_files if fe["status"] != "done"]
+    await asyncio.gather(*(review_one_file(fe) for fe in tasks_to_review))
+
     _ai_tasks[task_id]["status"] = "done"
     _ai_tasks[task_id]["current_file_id"] = None
     _ai_tasks[task_id]["findings"] = all_findings
+
+
+@router.get("/ai-review/stream/{task_id}")
+async def ai_review_stream_endpoint(task_id: str):
+    if task_id not in _stream_queues and task_id not in _ai_tasks:
+        raise HTTPException(404, "任务不存在或已过期")
+
+    async def event_generator():
+        queues: dict = {}
+        file_ids: list = []
+
+        for _ in range(60):
+            queues = _stream_queues.get(task_id, {})
+            file_ids = list(queues.keys())
+            if file_ids:
+                break
+            await asyncio.sleep(0.5)
+
+        if not file_ids:
+            yield f"event: error\ndata: {json.dumps({'error': 'AI 审查启动超时，请重试'})}\n\n"
+            yield f"event: task_done\ndata: {json.dumps({'status': 'done'})}\n\n"
+            return
+
+        total_files = len(file_ids)
+
+        merged_queue: asyncio.Queue = asyncio.Queue()
+
+        async def forward_from_file(fid: str):
+            q = queues.get(fid)
+            if not q:
+                return
+            while True:
+                try:
+                    event_type, data = await asyncio.wait_for(q.get(), timeout=600.0)
+                    await merged_queue.put((event_type, data))
+                    if event_type in ("file_done", "file_error"):
+                        return
+                except asyncio.TimeoutError:
+                    await merged_queue.put(("file_error", {"file_id": fid, "error": "审查超时"}))
+                    return
+                except Exception:
+                    return
+
+        forwarders = [asyncio.create_task(forward_from_file(fid)) for fid in file_ids]
+
+        finished = 0
+        while finished < total_files:
+            try:
+                event_type, data = await asyncio.wait_for(merged_queue.get(), timeout=600.0)
+            except asyncio.TimeoutError:
+                yield f"event: error\ndata: {json.dumps({'error': '整体审查超时'})}\n\n"
+                break
+
+            if event_type == "reasoning":
+                yield f"event: reasoning\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+            elif event_type == "token":
+                yield f"event: token\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+            elif event_type == "file_done":
+                yield f"event: file_done\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                finished += 1
+            elif event_type == "file_error":
+                yield f"event: file_error\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                finished += 1
+
+        yield f"event: task_done\ndata: {json.dumps({'status': 'done'})}\n\n"
+
+        for t in forwarders:
+            t.cancel()
+        await asyncio.gather(*forwarders, return_exceptions=True)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/ai-review/status")
