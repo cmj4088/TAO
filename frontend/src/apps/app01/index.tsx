@@ -35,7 +35,6 @@ const App01: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("");
   const [viewMode, setViewMode] = useState<"date" | "teacher">("date");
-  const [allocMode, setAllocMode] = useState<"strict" | "lenient">("strict");
   const [dragSource, setDragSource] = useState<{
     rowIndex: number;
     field: string;
@@ -46,12 +45,9 @@ const App01: React.FC = () => {
   undoStackRef.current = undoStack;
   const teachersRef = useRef(teachers);
   teachersRef.current = teachers;
-  const allocModeRef = useRef(allocMode);
-  allocModeRef.current = allocMode;
   const examRowsRef = useRef(examRows);
   examRowsRef.current = examRows;
   const tabHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 用 ref 避免拖拽时闭包读到过期的 state
   const dragSourceRef = useRef(dragSource);
   dragSourceRef.current = dragSource;
   const activeTabRef = useRef(activeTab);
@@ -85,7 +81,6 @@ const App01: React.FC = () => {
       e.preventDefault();
       e.stopPropagation();
       if (over) {
-        // 只接受单个文件
         if (e.dataTransfer.items.length !== 1) return;
         const item = e.dataTransfer.items[0];
         if (item.kind !== "file") return;
@@ -240,7 +235,6 @@ const App01: React.FC = () => {
       message.warning("请先上传文件");
       return;
     }
-    // 压入撤销栈
     setUndoStack((prev) => {
       const next = [...prev, examRows];
       if (next.length > 50) next.shift();
@@ -251,7 +245,6 @@ const App01: React.FC = () => {
       const allocateRes = await client.post<AllocateResponse>("/api/app01/allocate", {
         exam_rows: examRows,
         teachers,
-        mode: allocMode,
       });
       setExamRows(allocateRes.data.exam_rows);
       setWarnings(allocateRes.data.warnings);
@@ -298,7 +291,6 @@ const App01: React.FC = () => {
       const res = await client.post("/api/app01/validate", {
         exam_rows: examRows,
         teachers,
-        mode: allocMode,
       });
       setErrors(res.data.errors);
       if (res.data.errors.length === 0) {
@@ -353,7 +345,6 @@ const App01: React.FC = () => {
 
   const doReplace = useCallback(
     async (rowIndex: number, field: "监考1" | "监考2", newTeacher: string) => {
-      // 压入撤销栈
       setUndoStack((prev) => {
         const next = [...prev, examRows];
         if (next.length > 50) next.shift();
@@ -371,7 +362,6 @@ const App01: React.FC = () => {
           position: field,
           new_teacher: newTeacher,
         });
-        // 替换后重新计算场次并自动校验
         const newLoadMap = new Map<string, number>();
         for (const r of newRows) {
           if (r.监考1) newLoadMap.set(r.监考1, (newLoadMap.get(r.监考1) || 0) + 1);
@@ -381,7 +371,6 @@ const App01: React.FC = () => {
         const validateRes = await client.post("/api/app01/validate", {
           exam_rows: newRows,
           teachers,
-          mode: allocMode,
         });
         setErrors(validateRes.data.errors);
         message.success("替换成功");
@@ -389,7 +378,7 @@ const App01: React.FC = () => {
         // 静默
       }
     },
-    [examRows, teachers, allocMode],
+    [examRows, teachers],
   );
 
   const handleDragStart = (rowIndex: number, field: string, teacher: string) => {
@@ -404,7 +393,6 @@ const App01: React.FC = () => {
 
   const handleDrop = useCallback(
     async (targetRowIndex: number, targetField: string) => {
-      // 贴纸拖拽：替换而非交换
       if (stickerTeacherRef.current) {
         const stickerTeacher = stickerTeacherRef.current;
         stickerTeacherRef.current = null;
@@ -419,7 +407,6 @@ const App01: React.FC = () => {
         return;
       }
 
-      // 压入撤销栈
       setUndoStack((prev) => {
         const next = [...prev, examRows];
         if (next.length > 50) next.shift();
@@ -452,7 +439,6 @@ const App01: React.FC = () => {
           target_row_index: targetRowIndex,
           target_position: targetField,
         });
-        // 交换后重新计算场次
         const newLoadMap = new Map<string, number>();
         for (const r of newRows) {
           if (r.监考1) newLoadMap.set(r.监考1, (newLoadMap.get(r.监考1) || 0) + 1);
@@ -462,7 +448,6 @@ const App01: React.FC = () => {
         const validateRes = await client.post("/api/app01/validate", {
           exam_rows: newRows,
           teachers,
-          mode: allocMode,
         });
         setErrors(validateRes.data.errors);
       } catch {
@@ -476,7 +461,6 @@ const App01: React.FC = () => {
     e.preventDefault();
   };
 
-  // 撤销逻辑（按钮和 Ctrl+Z 共用）
   const doUndo = useCallback(() => {
     if (undoStackRef.current.length === 0) return;
     const snapshot = undoStackRef.current[undoStackRef.current.length - 1];
@@ -493,12 +477,10 @@ const App01: React.FC = () => {
     client.post("/api/app01/validate", {
       exam_rows: snapshot,
       teachers: teachersRef.current,
-      mode: allocModeRef.current,
     }).then((res) => { setErrors(res?.data?.errors || []); }).catch(() => {});
     message.info(`已撤销（剩余 ${remaining} 步）`);
   }, []);
 
-  // Ctrl+Z 快捷键
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === "z" && !e.repeat) {
@@ -531,21 +513,19 @@ const App01: React.FC = () => {
   }
   dateGroups.sort((a, b) => a.date.localeCompare(b.date));
 
-  // 计算公平线（从考试数据实时统计）
+  // 统计实际监考场次
   const loadMap = new Map<string, number>();
   for (const r of examRows) {
     if (r.监考1) loadMap.set(r.监考1, (loadMap.get(r.监考1) || 0) + 1);
     if (r.监考2) loadMap.set(r.监考2, (loadMap.get(r.监考2) || 0) + 1);
   }
-  // 区分普通老师和二级机构
-  const deptNames = new Set(teachers.filter((t) => t.tags.some((tag) => tag.includes("二级机构") && tag.includes("少排一场"))).map((t) => t.name));
-  const normalLoads = Array.from(loadMap.entries()).filter(([name]) => !deptNames.has(name)).map(([, c]) => c);
-  const deptLoads = Array.from(loadMap.entries()).filter(([name]) => deptNames.has(name)).map(([, c]) => c);
-  const normalMax = normalLoads.length > 0 ? Math.max(...normalLoads) : 0;
-  const normalMin = normalLoads.length > 0 ? Math.min(...normalLoads) : 0;
+
+  // 教师信息映射
+  const teacherInfoMap = new Map(teachers.map((t) => [t.name, t]));
+  const teacherSlotsMap = new Map(teachers.map((t) => [t.name, t.slots]));
+  const teacherGroupMap = new Map(teachers.map((t) => [t.name, t.group]));
 
   // 按老师汇总
-  const teacherInfoMap = new Map(teachers.map((t) => [t.name, t]));
   interface TeacherSession {
     date: string;
     time: string;
@@ -574,12 +554,14 @@ const App01: React.FC = () => {
       return {
         name,
         department: info?.department || "",
-        tags: info?.tags || [],
+        slots: info?.slots || 0,
+        group: info?.group || "",
         count: sessions.length,
         sessions,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name, "zh"));
+
   const errorMap = new Map<string, ValidationError[]>();
   for (const e of errors) {
     const key = `${e.row_index}-${e.field}`;
@@ -767,12 +749,6 @@ const App01: React.FC = () => {
                   撤销{undoStack.length > 0 ? `（${undoStack.length}）` : ""}
                 </Button>
               </Tooltip>
-              <Button
-                type={allocMode === "strict" ? "default" : "dashed"}
-                onClick={() => setAllocMode(allocMode === "strict" ? "lenient" : "strict")}
-              >
-                模式：{allocMode === "strict" ? "严格（领导不排）" : "宽松（领导参与）"}
-              </Button>
               <Button icon={<ExportOutlined />} onClick={doExport}>
                 导出 Excel
               </Button>
@@ -846,36 +822,27 @@ const App01: React.FC = () => {
                           </span>
                         ),
                         children: (() => {
-                          // 计算该日期分组内的少排老师
-                          const dateLoadMap = new Map<string, number>();
-                          for (const r of g.rows) {
-                            if (r.监考1) dateLoadMap.set(r.监考1, (dateLoadMap.get(r.监考1) || 0) + 1);
-                            if (r.监考2) dateLoadMap.set(r.监考2, (dateLoadMap.get(r.监考2) || 0) + 1);
-                          }
-                          // 从全局场次统计中计算少排老师（全局公平线）
-                          const stickers: { name: string; current: number; gap: number; isDept: boolean }[] = [];
+                          // 计算该日期分组内的未达目标老师
+                          const stickers: { name: string; current: number; target: number }[] = [];
                           for (const [name, info] of teacherInfoMap) {
                             const current = loadMap.get(name) || 0;
-                            const isDept = deptNames.has(name);
-                            const target = isDept ? Math.max(1, normalMax - 1) : normalMax;
-                            const gap = target - current;
-                            if (gap > 0) {
-                              // 检查当天这个老师是否有空（不在同一时段已有安排）
+                            const target = info.slots;
+                            if (current < target) {
+                              // 检查当天这个老师是否有空
                               const daySlots = new Set<string>();
                               for (const r of g.rows) {
                                 if ((r.监考1 === name || r.监考2 === name)) {
                                   daySlots.add(r.考试时间);
                                 }
                               }
-                              // 只要老师没有在当天所有时段都排满，就算可用
                               const allDaySlots = new Set(g.rows.map(r => r.考试时间));
                               const available = Array.from(allDaySlots).some(slot => !daySlots.has(slot)) || daySlots.size === 0;
                               if (available) {
-                                stickers.push({ name, current, gap, isDept });
+                                stickers.push({ name, current, target });
                               }
                             }
                           }
-                          stickers.sort((a, b) => b.gap - a.gap || a.name.localeCompare(b.name, "zh"));
+                          stickers.sort((a, b) => (b.target - b.current) - (a.target - a.current) || a.name.localeCompare(b.name, "zh"));
 
                           return (
                             <>
@@ -898,7 +865,7 @@ const App01: React.FC = () => {
                                   }}
                                 >
                                   <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>
-                                    少排老师（拖拽到单元格替换）：
+                                    未达目标老师（拖拽到单元格替换）：
                                   </Text>
                                   <Space size={[4, 4]} wrap>
                                     {stickers.map((s) => (
@@ -915,7 +882,7 @@ const App01: React.FC = () => {
                                         }}
                                         style={{ cursor: "grab" }}
                                       >
-                                        {s.name}（{s.current}场，少{s.gap}场）
+                                        {s.name}（{s.current}/{s.target}场）
                                       </Tag>
                                     ))}
                                   </Space>
@@ -962,40 +929,34 @@ const App01: React.FC = () => {
                         {
                           title: "部门/岗位",
                           dataIndex: "department",
-                          width: 180,
+                          width: 160,
                           ellipsis: true,
                           render: (dept: string) => dept ? <Text type="secondary" style={{ fontSize: 13 }}>{dept}</Text> : <Text type="secondary">—</Text>,
                         },
                         {
-                          title: "标记",
-                          dataIndex: "tags",
-                          width: 180,
-                          render: (tags: string[]) => (
-                            <Space size={4} wrap>
-                              {tags.length > 0
-                                ? tags.map((t) => <Tag key={t} color="orange">{t}</Tag>)
-                                : <Tag color="default">普通</Tag>}
-                            </Space>
-                          ),
+                          title: "分组",
+                          dataIndex: "group",
+                          width: 80,
+                          render: (group: string) => group ? <Tag color="purple">{group}</Tag> : <Tag color="default">无</Tag>,
                         },
                         {
-                          title: `监考场次（普通: ${normalMin}~${normalMax}场，二级: ≤${Math.max(1, normalMax - 1)}场）`,
+                          title: "目标场次",
+                          dataIndex: "slots",
+                          width: 90,
+                          sorter: (a: any, b: any) => a.slots - b.slots,
+                          render: (slots: number) => <Text>{slots} 场</Text>,
+                        },
+                        {
+                          title: "已排/目标",
                           dataIndex: "count",
-                          width: 260,
+                          width: 150,
                           sorter: (a: any, b: any) => a.count - b.count,
                           render: (count: number, record: any) => {
-                            const isDept = deptNames.has(record.name);
+                            const target = record.slots;
                             let color = "green";
-                            if (isDept) {
-                              const deptCap = Math.max(1, normalMax - 1);
-                              if (count > deptCap) color = "red";
-                              else if (count === deptCap) color = "green";
-                              else color = "orange";
-                            } else {
-                              if (count < normalMin) color = "orange";
-                              else if (count > normalMax) color = "red";
-                            }
-                            return <Tag color={color}>{count} 场</Tag>;
+                            if (count > target) color = "red";
+                            else if (count < target) color = "orange";
+                            return <Tag color={color}>{count} / {target} 场</Tag>;
                           },
                         },
                       ]}

@@ -5,8 +5,8 @@ from pydantic import BaseModel
 class TeacherInfo(BaseModel):
     name: str
     department: str
-    tags: list[str] = []
-    excluded_dates: list[str] = []
+    slots: int = 0  # 安排场次
+    group: str = ""  # 分组（区分大小写，空字符串=无分组）
 
 
 class ExamRow(BaseModel):
@@ -30,7 +30,6 @@ class UploadResponse(BaseModel):
 class AllocateRequest(BaseModel):
     exam_rows: list[ExamRow]
     teachers: list[TeacherInfo]
-    mode: str = "strict"  # "strict" | "lenient"
 
 
 class AllocateResponse(BaseModel):
