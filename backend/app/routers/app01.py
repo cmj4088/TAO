@@ -1,6 +1,11 @@
 """app01 监考分配 API"""
 import io
 import copy
+import json
+import uuid
+import asyncio
+import threading
+from collections import defaultdict
 from urllib.parse import quote
 
 import openpyxl
@@ -22,6 +27,7 @@ from app.schemas.app01 import (
     ValidationError,
 )
 from app.services.invigilator import allocate, validate
+from app.services.ai_reviewer_app01 import review_stream
 
 router = APIRouter(prefix="/api/app01", tags=["app01"])
 
@@ -260,5 +266,127 @@ def export_excel():
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+        },
+    )
+
+
+# ===== AI 审查（SSE 流式） =====
+
+_ai_tasks: dict[str, dict] = {}
+_stream_queues: dict[str, dict[str, asyncio.Queue]] = defaultdict(dict)
+
+TASK_TTL = 600  # 任务完成后保留 10 分钟再清理
+
+
+def _cleanup_task(task_id: str):
+    """延迟清理任务数据，避免内存泄漏"""
+    import time
+    time.sleep(TASK_TTL)
+    _ai_tasks.pop(task_id, None)
+    _stream_queues.pop(task_id, None)
+
+
+@router.post("/ai-review")
+def start_ai_review():
+    """启动 AI 审查，返回 task_id"""
+    global _session_exam_rows, _session_teachers
+
+    if not _session_exam_rows:
+        raise HTTPException(400, "请先上传文件并执行分配")
+
+    task_id = str(uuid.uuid4())
+    _ai_tasks[task_id] = {"status": "starting"}
+
+    loads: dict[str, int] = {}
+    for r in _session_exam_rows:
+        if r.监考1:
+            loads[r.监考1] = loads.get(r.监考1, 0) + 1
+        if r.监考2:
+            loads[r.监考2] = loads.get(r.监考2, 0) + 1
+
+    t = threading.Thread(
+        target=_run_ai_review,
+        args=(task_id, copy.deepcopy(_session_exam_rows), copy.deepcopy(_session_teachers or []), loads),
+        daemon=True,
+    )
+    t.start()
+
+    return {"task_id": task_id, "status": "running"}
+
+
+def _run_ai_review(task_id: str, exam_rows: list, teachers: list, loads: dict):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_run_ai_review_async(task_id, exam_rows, teachers, loads))
+    except Exception:
+        import traceback
+        traceback.print_exc()
+    finally:
+        loop.close()
+        threading.Thread(target=_cleanup_task, args=(task_id,), daemon=True).start()
+
+
+async def _run_ai_review_async(task_id: str, exam_rows: list, teachers: list, loads: dict):
+    queue: asyncio.Queue = asyncio.Queue()
+    _stream_queues[task_id] = {"app01": queue}
+
+    _ai_tasks[task_id] = {"status": "running"}
+
+    try:
+        async for event_type, data in review_stream(exam_rows, teachers, loads):
+            await queue.put((event_type, data))
+    except Exception as e:
+        await queue.put(("error", str(e)))
+
+    _ai_tasks[task_id]["status"] = "done"
+
+
+@router.get("/ai-review/stream/{task_id}")
+async def ai_review_stream_endpoint(task_id: str):
+    if task_id not in _stream_queues and task_id not in _ai_tasks:
+        raise HTTPException(404, "任务不存在或已过期")
+
+    async def event_generator():
+        for _ in range(60):
+            queues = _stream_queues.get(task_id, {})
+            if queues:
+                break
+            await asyncio.sleep(0.5)
+
+        q = queues.get("app01")
+        if not q:
+            yield f"event: review_error\ndata: {json.dumps({'error': 'AI审查启动超时，请重试'})}\n\n"
+            yield f"event: task_done\ndata: {json.dumps({'status': 'done'})}\n\n"
+            return
+
+        while True:
+            try:
+                event_type, data = await asyncio.wait_for(q.get(), timeout=300.0)
+            except asyncio.TimeoutError:
+                yield f"event: review_error\ndata: {json.dumps({'error': '审查超时，请重试'})}\n\n"
+                break
+
+            if event_type == "reasoning":
+                yield f"event: reasoning\ndata: {json.dumps({'content': data}, ensure_ascii=False)}\n\n"
+            elif event_type == "token":
+                yield f"event: token\ndata: {json.dumps({'content': data}, ensure_ascii=False)}\n\n"
+            elif event_type == "done":
+                findings, summary = data
+                yield f"event: done\ndata: {json.dumps({'findings': findings, 'summary': summary}, ensure_ascii=False)}\n\n"
+                break
+            elif event_type == "error":
+                yield f"event: review_error\ndata: {json.dumps({'error': str(data)})}\n\n"
+                break
+
+        yield f"event: task_done\ndata: {json.dumps({'status': 'done'})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )

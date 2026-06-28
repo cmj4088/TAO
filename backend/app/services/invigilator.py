@@ -107,7 +107,7 @@ def allocate(
     best_warnings: list[str] = []
 
     for attempt in range(MAX_RETRIES):
-        rng = random.Random(attempt * 137 + hash(str(time_slots)) % 10000)
+        rng = random.Random()  # 真随机，每次运行结果不同
         result, warnings = _assign_all(
             exam_rows, time_slots, slot_to_rows, teachers,
             own_slots, groups, teacher_slots, rng

@@ -19,6 +19,8 @@ import {
   InboxOutlined,
   FileExcelOutlined,
   DeleteOutlined,
+  RobotOutlined,
+  LoadingOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import client from "@/api/client";
@@ -53,6 +55,15 @@ const App01: React.FC = () => {
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
   const stickerTeacherRef = useRef<string | null>(null);
+
+  // AI 审查状态
+  const [aiReviewOpen, setAiReviewOpen] = useState(false);
+  const [aiReviewing, setAiReviewing] = useState(false);
+  const [aiStreamText, setAiStreamText] = useState("");
+  const [aiFindings, setAiFindings] = useState<{ severity: string; description: string; suggestion: string }[]>([]);
+  const [aiSummary, setAiSummary] = useState("");
+  const [aiError, setAiError] = useState("");
+  const aiEventSourceRef = useRef<EventSource | null>(null);
 
   const [examFile, setExamFile] = useState<File | null>(null);
   const [contactFile, setContactFile] = useState<File | null>(null);
@@ -481,6 +492,76 @@ const App01: React.FC = () => {
     message.info(`已撤销（剩余 ${remaining} 步）`);
   }, []);
 
+  // AI 审查
+  const doAiReview = useCallback(async () => {
+    if (examRows.length === 0) {
+      message.warning("请先执行分配");
+      return;
+    }
+    setAiReviewOpen(true);
+    setAiReviewing(true);
+    setAiStreamText("");
+    setAiFindings([]);
+    setAiSummary("");
+    setAiError("");
+
+    try {
+      const res = await client.post("/api/app01/ai-review");
+      const taskId = res.data.task_id;
+      const baseUrl = client.defaults.baseURL || "http://localhost:8002";
+      const url = `${baseUrl}/api/app01/ai-review/stream/${taskId}`;
+      const es = new EventSource(url);
+      aiEventSourceRef.current = es;
+
+      es.addEventListener("reasoning", (e: MessageEvent) => {
+        const data = JSON.parse(e.data);
+        setAiStreamText((prev) => prev + data.content);
+      });
+
+      es.addEventListener("token", (e: MessageEvent) => {
+        const data = JSON.parse(e.data);
+        setAiStreamText((prev) => prev + data.content);
+      });
+
+      es.addEventListener("done", (e: MessageEvent) => {
+        const data = JSON.parse(e.data);
+        setAiFindings(data.findings || []);
+        setAiSummary(data.summary || "");
+        setAiReviewing(false);
+        es.close();
+      });
+
+      es.addEventListener("review_error", (e: MessageEvent) => {
+        const data = JSON.parse(e.data);
+        setAiError(data.error || "AI 审查出错");
+        setAiReviewing(false);
+        es.close();
+      });
+
+      es.addEventListener("error", () => {
+        // EventSource 原生错误（连接断开等），不做额外处理
+        if (aiEventSourceRef.current) {
+          setAiReviewing(false);
+          es.close();
+        }
+      });
+
+      es.addEventListener("task_done", () => {
+        es.close();
+      });
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail || "AI审查启动失败");
+      setAiReviewing(false);
+    }
+  }, [examRows]);
+
+  const closeAiReview = useCallback(() => {
+    if (aiEventSourceRef.current) {
+      aiEventSourceRef.current.close();
+    }
+    setAiReviewOpen(false);
+  }, []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === "z" && !e.repeat) {
@@ -523,7 +604,6 @@ const App01: React.FC = () => {
   // 教师信息映射
   const teacherInfoMap = new Map(teachers.map((t) => [t.name, t]));
   const teacherSlotsMap = new Map(teachers.map((t) => [t.name, t.slots]));
-  const teacherGroupMap = new Map(teachers.map((t) => [t.name, t.group]));
 
   // 按老师汇总
   interface TeacherSession {
@@ -587,12 +667,18 @@ const App01: React.FC = () => {
     {
       title: "监考1",
       dataIndex: "监考1",
-      width: 90,
+      width: 110,
       render: (val: string | null, record: ExamRow) => {
         const key = `${record.index}-监考1`;
         const cellErrors = errorMap.get(key);
         const isError = cellErrors && cellErrors.length > 0;
-        const tagColor = isError ? "red" : "blue";
+        const actual = val ? (loadMap.get(val) || 0) : 0;
+        const target = val ? (teacherSlotsMap.get(val) || 0) : 0;
+        let tagColor = "blue";
+        if (isError) tagColor = "red";
+        else if (val && actual > target) tagColor = "red";
+        else if (val && actual < target) tagColor = "blue";
+        const label = val ? `${val}(${actual}/${target})` : "";
         const content = val ? (
           <Tag
             color={tagColor}
@@ -600,7 +686,7 @@ const App01: React.FC = () => {
             onDragStart={() => handleDragStart(record.index, "监考1", val || "")}
             style={{ cursor: "grab", margin: 0 }}
           >
-            {val}
+            {label}
           </Tag>
         ) : (
           <Text
@@ -640,12 +726,18 @@ const App01: React.FC = () => {
     {
       title: "监考2",
       dataIndex: "监考2",
-      width: 90,
+      width: 110,
       render: (val: string | null, record: ExamRow) => {
         const key = `${record.index}-监考2`;
         const cellErrors = errorMap.get(key);
         const isError = cellErrors && cellErrors.length > 0;
-        const tagColor = isError ? "red" : "green";
+        const actual = val ? (loadMap.get(val) || 0) : 0;
+        const target = val ? (teacherSlotsMap.get(val) || 0) : 0;
+        let tagColor = "green";
+        if (isError) tagColor = "red";
+        else if (val && actual > target) tagColor = "red";
+        else if (val && actual < target) tagColor = "blue";
+        const label = val ? `${val}(${actual}/${target})` : "";
         const content = val ? (
           <Tag
             color={tagColor}
@@ -653,7 +745,7 @@ const App01: React.FC = () => {
             onDragStart={() => handleDragStart(record.index, "监考2", val || "")}
             style={{ cursor: "grab", margin: 0 }}
           >
-            {val}
+            {label}
           </Tag>
         ) : (
           <Text
@@ -751,6 +843,13 @@ const App01: React.FC = () => {
               </Tooltip>
               <Button icon={<ExportOutlined />} onClick={doExport}>
                 导出 Excel
+              </Button>
+              <Button
+                icon={aiReviewing ? <LoadingOutlined /> : <RobotOutlined />}
+                onClick={doAiReview}
+                disabled={aiReviewing}
+              >
+                AI 审查
               </Button>
             </Space>
 
@@ -955,7 +1054,7 @@ const App01: React.FC = () => {
                             const target = record.slots;
                             let color = "green";
                             if (count > target) color = "red";
-                            else if (count < target) color = "orange";
+                            else if (count < target) color = "blue";
                             return <Tag color={color}>{count} / {target} 场</Tag>;
                           },
                         },
@@ -968,6 +1067,88 @@ const App01: React.FC = () => {
           </>
         )}
       </Card>
+
+      <Modal
+        open={aiReviewOpen}
+        onCancel={closeAiReview}
+        footer={null}
+        width={720}
+        title={
+          <Space>
+            <RobotOutlined />
+            AI 审查结果
+          </Space>
+        }
+      >
+        {aiReviewing && (
+          <div>
+            <div style={{ textAlign: "center", padding: 24 }}>
+              <LoadingOutlined style={{ fontSize: 32, color: "#1677ff" }} />
+              <div style={{ marginTop: 12 }}>
+                <Text type="secondary">AI 正在分析监考安排...</Text>
+              </div>
+            </div>
+            {aiStreamText && (
+              <div style={{
+                maxHeight: 300, overflow: "auto", padding: "12px 16px",
+                background: "#f6f8fa", borderRadius: 6, whiteSpace: "pre-wrap",
+                fontSize: 13, lineHeight: 1.6, color: "#555",
+              }}>
+                {aiStreamText}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!aiReviewing && aiError && (
+          <Alert type="error" showIcon message={aiError} />
+        )}
+
+        {!aiReviewing && !aiError && aiFindings.length === 0 && (
+          <Alert type="success" showIcon message="未发现问题，安排合理" />
+        )}
+
+        {!aiReviewing && aiFindings.length > 0 && (
+          <div>
+            {aiSummary && (
+              <Alert
+                type={aiFindings.some((f) => f.severity === "error") ? "error" : "warning"}
+                showIcon
+                message={aiSummary}
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            {aiFindings.map((f, i) => (
+              <div
+                key={i}
+                style={{
+                  marginBottom: 12,
+                  padding: "12px 16px",
+                  background: f.severity === "error" ? "#fff2f0" : "#fffbe6",
+                  borderLeft: `4px solid ${f.severity === "error" ? "#ff4d4f" : "#faad14"}`,
+                  borderRadius: 4,
+                }}
+              >
+                <div style={{ marginBottom: 4 }}>
+                  <Space size={4}>
+                    <Tag color={f.severity === "error" ? "red" : "warning"}>
+                      {f.severity === "error" ? "错误" : "提醒"}
+                    </Tag>
+                  </Space>
+                </div>
+                <Text style={{ fontSize: 13, color: f.severity === "error" ? "#cf1322" : undefined }}>
+                  {f.description}
+                </Text>
+                {f.suggestion && (
+                  <div style={{ marginTop: 4 }}>
+                    <Text style={{ fontSize: 12, color: "#389e0d" }}>建议：{f.suggestion}</Text>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
