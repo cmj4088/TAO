@@ -56,6 +56,7 @@ export interface ValidationError {
   field: string;
   teacher: string;
   reason: string;
+  priority: number;
 }
 
 export interface ValidateResponse {

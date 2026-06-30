@@ -55,6 +55,7 @@ class ValidationError(BaseModel):
     field: str
     teacher: str
     reason: str
+    priority: int = 0  # 1=严重(同时段重复/自己班优先), 2=场次不匹配, 3=分组不一致
 
 
 class ValidateResponse(BaseModel):
