@@ -268,9 +268,16 @@ const App01: React.FC = () => {
           teachers,
         });
         setErrors(validateRes.data.errors);
-        if (validateRes.data.errors.length > 0) {
+        const criticalCount = validateRes.data.errors.filter((e: ValidationError) => e.priority !== 2).length;
+        const fieldCount = validateRes.data.errors.filter((e: ValidationError) => e.priority === 2).length;
+        if (criticalCount > 0) {
           message.warning(
-            `分配完成，发现 ${validateRes.data.errors.length} 个违规项（已标红）`,
+            `发现 ${criticalCount} 个严重违规（已标红）${fieldCount > 0 ? `，另有 ${fieldCount} 个场次偏差（红/蓝标记）` : ""}`,
+            5,
+          );
+        } else if (fieldCount > 0) {
+          message.info(
+            `${fieldCount} 个场次偏差，已在单元格用红/蓝色标记，拖拽预备框贴纸即可调整`
           );
         } else if (allocateRes.data.warnings.length > 0) {
           message.warning(`分配完成，但有 ${allocateRes.data.warnings.length} 条警告`);
@@ -900,62 +907,80 @@ const App01: React.FC = () => {
               />
             )}
 
-            {errors.length > 0 && (
-              <>
-                <Alert
-                  type="error"
-                  showIcon
-                  closable
-                  message={`${errors.length} 个违规项`}
-                  description={'点击下方「跳转 →」按钮定位到问题单元格'}
-                  style={{ marginBottom: 8 }}
-                />
-                <div style={{
-                  maxHeight: 240, overflow: "auto", marginBottom: 16,
-                  border: "1px solid #ffccc7", borderRadius: 6, padding: "4px 8px",
-                  background: "#fff",
-                }}>
-                  {errors.slice(0, 30).map((e, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 6,
-                        padding: "6px 0",
-                        borderBottom: i < errors.length - 1 && i < 29 ? "1px solid #ffd8d2" : "none",
-                        fontSize: 13,
-                      }}
-                    >
-                      <Tag color="error" style={{ margin: 0, flexShrink: 0 }}>
-                        {e.field || "全局"}
-                      </Tag>
-                      <Text style={{ flex: 1, wordBreak: "break-all" }}>
-                        {e.row_index > 0 ? (
-                          <Text type="secondary">第{e.row_index}行 </Text>
-                        ) : null}
-                        {e.teacher ? `${e.teacher}：` : ""}
-                        {e.reason}
-                      </Text>
-                      {e.row_index > 0 && (
-                        <Button
-                          size="small"
-                          type="primary"
-                          ghost
-                          onClick={() => jumpToError(e.row_index)}
-                          style={{ flexShrink: 0, fontSize: 12 }}
-                        >
-                          跳转 →
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                  {errors.length > 30 && (
-                    <div style={{ padding: "6px 0", color: "#999", fontSize: 12, textAlign: "center" }}>
-                      ...还有 {errors.length - 30} 个违规项
-                    </div>
+            {(() => {
+              const criticalErrors = errors.filter((e) => e.priority !== 2);
+              const fieldErrors = errors.filter((e) => e.priority === 2);
+              return (
+                <>
+                  {criticalErrors.length > 0 && (
+                    <>
+                      <Alert
+                        type="error"
+                        showIcon
+                        closable
+                        message={`${criticalErrors.length} 个严重违规项`}
+                        description={fieldErrors.length > 0 ? `另有 ${fieldErrors.length} 个场次偏差，已在单元格标记颜色` : '点击下方「跳转 →」按钮定位到问题单元格'}
+                        style={{ marginBottom: 8 }}
+                      />
+                      <div style={{
+                        maxHeight: 240, overflow: "auto", marginBottom: 16,
+                        border: "1px solid #ffccc7", borderRadius: 6, padding: "4px 8px",
+                        background: "#fff",
+                      }}>
+                        {criticalErrors.slice(0, 30).map((e, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 6,
+                              padding: "6px 0",
+                              borderBottom: i < criticalErrors.length - 1 && i < 29 ? "1px solid #ffd8d2" : "none",
+                              fontSize: 13,
+                            }}
+                          >
+                            <Tag color={e.priority === 1 ? "red" : "warning"} style={{ margin: 0, flexShrink: 0 }}>
+                              {e.field || "全局"}
+                            </Tag>
+                            <Text style={{ flex: 1, wordBreak: "break-all" }}>
+                              {e.row_index > 0 ? (
+                                <Text type="secondary">第{e.row_index}行 </Text>
+                              ) : null}
+                              {e.teacher ? `${e.teacher}：` : ""}
+                              {e.reason}
+                            </Text>
+                            {e.row_index > 0 && (
+                              <Button
+                                size="small"
+                                type="primary"
+                                ghost
+                                onClick={() => jumpToError(e.row_index)}
+                                style={{ flexShrink: 0, fontSize: 12 }}
+                              >
+                                跳转 →
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                        {criticalErrors.length > 30 && (
+                          <div style={{ padding: "6px 0", color: "#999", fontSize: 12, textAlign: "center" }}>
+                            ...还有 {criticalErrors.length - 30} 个违规项
+                          </div>
+                        )}
+                      </div>
+                    </>
                   )}
-                </div>
-              </>
-            )}
+                  {criticalErrors.length === 0 && fieldErrors.length > 0 && (
+                    <Alert
+                      type="info"
+                      showIcon
+                      closable
+                      message={`${fieldErrors.length} 个场次偏差`}
+                      description="实际场次与目标场次不一致，已在单元格用红/蓝色标记。拖拽预备框贴纸即可调整。"
+                      style={{ marginBottom: 16 }}
+                    />
+                  )}
+                </>
+              );
+            })()}
 
             <Tabs
               activeKey={viewMode}
