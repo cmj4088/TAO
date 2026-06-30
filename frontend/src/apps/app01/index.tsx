@@ -576,16 +576,16 @@ const App01: React.FC = () => {
     let attempts = 0;
     const tryScroll = () => {
       const el = document.querySelector(`[data-row-key="${rowIndex}"]`);
-      if (el) {
+      if (el && (el as HTMLElement).offsetParent !== null) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         (el as HTMLElement).style.transition = "background 0.3s";
         (el as HTMLElement).style.background = "#fff2f0";
         setTimeout(() => {
           (el as HTMLElement).style.background = "";
         }, 2000);
-      } else if (attempts < 10) {
+      } else if (attempts < 20) {
         attempts++;
-        setTimeout(tryScroll, 100);
+        setTimeout(tryScroll, 150);
       }
     };
     setTimeout(tryScroll, 100);
