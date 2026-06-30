@@ -1027,38 +1027,54 @@ const App01: React.FC = () => {
                                 size="small"
                                 pagination={false}
                               />
-                              {stickers.length > 0 && (
+                              {(
                                 <div
+                                  onDragOver={(e) => { e.preventDefault(); }}
+                                  onDrop={async (e) => {
+                                    e.preventDefault();
+                                    const src = dragSourceRef.current;
+                                    if (src) {
+                                      await doReplace(src.rowIndex, src.field as "监考1" | "监考2", "");
+                                      setDragSource(null);
+                                    }
+                                  }}
                                   style={{
                                     marginTop: 12,
                                     padding: "10px 12px",
-                                    background: "#fafafa",
-                                    border: "1px solid #d9d9d9",
+                                    background: dragSourceRef.current ? "#e6f4ff" : "#fafafa",
+                                    border: dragSourceRef.current ? "2px dashed #1677ff" : "1px solid #d9d9d9",
                                     borderRadius: 6,
+                                    transition: "all 0.2s",
                                   }}
                                 >
                                   <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>
-                                    老师贴纸（拖拽到单元格替换）：
+                                    预备框（拖入清空 / 拖出填充）：
                                   </Text>
-                                  <Space size={[4, 4]} wrap>
-                                    {stickers.map((s) => (
-                                      <Tag
-                                        key={s.name}
-                                        color={s.color}
-                                        draggable
-                                        onDragStart={(e) => {
-                                          e.dataTransfer.effectAllowed = "move";
-                                          handleStickerDragStart(s.name);
-                                        }}
-                                        onDragEnd={() => {
-                                          stickerTeacherRef.current = null;
-                                        }}
-                                        style={{ cursor: "grab" }}
-                                      >
-                                        {s.name}（{s.current}/{s.target}）
-                                      </Tag>
-                                    ))}
-                                  </Space>
+                                  {stickers.length > 0 ? (
+                                    <Space size={[4, 4]} wrap>
+                                      {stickers.map((s) => (
+                                        <Tag
+                                          key={s.name}
+                                          color={s.color}
+                                          draggable
+                                          onDragStart={(e) => {
+                                            e.dataTransfer.effectAllowed = "move";
+                                            handleStickerDragStart(s.name);
+                                          }}
+                                          onDragEnd={() => {
+                                            stickerTeacherRef.current = null;
+                                          }}
+                                          style={{ cursor: "grab" }}
+                                        >
+                                          {s.name}（{s.current}/{s.target}）
+                                        </Tag>
+                                      ))}
+                                    </Space>
+                                  ) : (
+                                    <Text type="secondary" style={{ fontSize: 12, fontStyle: "italic" }}>
+                                      拖拽单元格老师到此处清空
+                                    </Text>
+                                  )}
                                 </div>
                               )}
                             </>
