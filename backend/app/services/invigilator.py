@@ -417,19 +417,22 @@ def _review(
 
     # 同时段重复
     for ts, exam_map in slot_rows.items():
-        seen: dict[str, list[int]] = {}
+        seen: dict[str, list[tuple[int, str]]] = {}
         for r in exam_map.values():
             for field in ["监考1", "监考2"]:
                 t = getattr(r, field)
                 if not t:
                     continue
-                seen.setdefault(t, []).append(r.index)
-        for teacher, indices in seen.items():
-            if len(indices) > 1:
-                for idx in indices:
+                seen.setdefault(t, []).append((r.index, field))
+        for teacher, occurrences in seen.items():
+            if len(occurrences) > 1:
+                for idx, field in occurrences:
+                    other = [(oi, of) for oi, of in occurrences if (oi, of) != (idx, field)]
+                    other_desc = "、".join(f"第{oi}行{of}" for oi, of in other)
                     errors.append({
-                        "priority": 1, "row_index": idx, "field": "监考1",
-                        "teacher": teacher, "reason": f"同一时段({ts})重复出现",
+                        "priority": 1, "row_index": idx, "field": field,
+                        "teacher": teacher,
+                        "reason": f"同一时段({ts})重复出现，与{other_desc}冲突",
                     })
 
     # P1: 自己班优先
