@@ -1,32 +1,40 @@
 @echo off
 chcp 65001 >nul
-set LOG=%~dp0startup.log
-echo === TAO 启动 %date% %time% === > "%LOG%"
 
 echo ============================================
 echo   TAO 演示系统启动中...
-echo   日志: demo\startup.log
 echo ============================================
 echo.
+
+echo [0] 清理旧进程...
+taskkill /F /IM python.exe /T 2>nul
+taskkill /F /IM node.exe /T 2>nul
+taskkill /F /IM electron.exe /T 2>nul
+timeout /t 2 /nobreak >nul
+echo   已清理
 
 echo [1/3] 启动后端 (端口 8002)...
-echo [1/3] 后端 >> "%LOG%"
-start "TAO-Backend" /D "%~dp0..\backend" cmd /c "venv\Scripts\activate.bat && python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 1>> %LOG% 2>&1"
+start "TAO-Backend" cmd /c "cd /d %~dp0..\backend && venv\Scripts\activate.bat && python -m uvicorn app.main:app --host 0.0.0.0 --port 8002"
+echo   后端已启动
 
 echo [2/3] 启动前端 Vite (端口 5173)...
-echo [2/3] 前端 Vite >> "%LOG%"
-start "TAO-Vite" /D "%~dp0..\frontend" cmd /k "npm run dev:vite 1>> %LOG% 2>&1"
+cd /d %~dp0..\frontend
+start "TAO-Vite" /B npx vite --host 0.0.0.0 --port 5173
+echo   前端已启动
 
-echo [3/3] 等 10 秒后启动 Electron...
-timeout /t 10 /nobreak >nul
+echo [3/3] 等待前端就绪...
+:waitloop
+timeout /t 2 /nobreak >nul
+curl -s -o nul http://localhost:5173 2>nul
+if %errorlevel% equ 0 goto ready
+goto waitloop
 
-echo [3/3] 启动 Electron >> "%LOG%"
-start "TAO-App" /D "%~dp0..\frontend" cmd /c "npm run dev:electron 1>> %LOG% 2>&1"
+:ready
+echo   前端就绪，启动 Electron...
+start "TAO-App" /B npx electron .
 
 echo.
 echo ============================================
-echo   启动完成！
-echo   如有问题查看 demo\startup.log
+echo   启动完成！本地窗口即将弹出
 echo ============================================
-echo === 完成 %time% === >> "%LOG%"
 pause
