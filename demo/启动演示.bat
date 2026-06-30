@@ -1,23 +1,32 @@
 @echo off
 chcp 65001 >nul
+set LOG=%~dp0startup.log
+echo === TAO 启动 %date% %time% === > "%LOG%"
+
 echo ============================================
 echo   TAO 演示系统启动中...
+echo   日志: demo\startup.log
 echo ============================================
 echo.
 
-echo [1/3] 启动后端服务 (端口 8002)...
-start "TAO-Backend" cmd /c "cd /d %~dp0..\backend && venv\Scripts\activate.bat && python -m uvicorn app.main:app --host 0.0.0.0 --port 8002"
+echo [1/3] 启动后端 (端口 8002)...
+echo [1/3] 后端 >> "%LOG%"
+start "TAO-Backend" /D "%~dp0..\backend" cmd /c "venv\Scripts\activate.bat && python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 2>> %LOG%"
 
-echo [2/3] 启动前端开发服务器 (端口 5173)...
-start "TAO-Vite" cmd /c "cd /d %~dp0..\frontend && npm run dev:vite"
+echo [2/3] 启动前端 Vite (端口 5173)...
+echo [2/3] 前端 Vite >> "%LOG%"
+start "TAO-Vite" /D "%~dp0..\frontend" cmd /c "npm run dev:vite 2>> %LOG%"
 
-echo [3/3] 等待 8 秒后启动本地窗口...
-timeout /t 8 /nobreak >nul
-start "TAO-App" cmd /c "cd /d %~dp0..\frontend && npm run dev:electron"
+echo [3/3] 等 10 秒后启动 Electron...
+timeout /t 10 /nobreak >nul
+
+echo [3/3] 启动 Electron >> "%LOG%"
+start "TAO-App" /D "%~dp0..\frontend" cmd /c "npm run dev:electron 2>> %LOG%"
 
 echo.
 echo ============================================
-echo   启动完成！本地窗口已打开
-echo   关闭此窗口不会影响后端和前端运行
+echo   启动完成！
+echo   如有问题查看 demo\startup.log
 echo ============================================
+echo === 完成 %time% === >> "%LOG%"
 pause
