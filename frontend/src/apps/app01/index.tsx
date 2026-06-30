@@ -562,6 +562,35 @@ const App01: React.FC = () => {
     setAiReviewOpen(false);
   }, []);
 
+  // 一键跳转到错误行
+  const jumpToError = useCallback((rowIndex: number) => {
+    const row = examRows.find((r) => r.index === rowIndex);
+    if (!row) return;
+    const m = row.考试时间.match(/^(\d{4}-\d{2}-\d{2})/);
+    const date = m ? m[1] : row.考试时间;
+
+    setViewMode("date");
+    setActiveTab(date);
+
+    // 延迟 + 重试，等 DOM 更新
+    let attempts = 0;
+    const tryScroll = () => {
+      const el = document.querySelector(`[data-row-key="${rowIndex}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        (el as HTMLElement).style.transition = "background 0.3s";
+        (el as HTMLElement).style.background = "#fff2f0";
+        setTimeout(() => {
+          (el as HTMLElement).style.background = "";
+        }, 2000);
+      } else if (attempts < 10) {
+        attempts++;
+        setTimeout(tryScroll, 100);
+      }
+    };
+    setTimeout(tryScroll, 100);
+  }, [examRows]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === "z" && !e.repeat) {
@@ -872,14 +901,60 @@ const App01: React.FC = () => {
             )}
 
             {errors.length > 0 && (
-              <Alert
-                type="error"
-                showIcon
-                closable
-                message={`${errors.length} 个违规项`}
-                description="红色标记的单元格存在违规，鼠标悬停查看详情"
-                style={{ marginBottom: 16 }}
-              />
+              <>
+                <Alert
+                  type="error"
+                  showIcon
+                  closable
+                  message={`${errors.length} 个违规项`}
+                  description={'点击下方「跳转 →」按钮定位到问题单元格'}
+                  style={{ marginBottom: 8 }}
+                />
+                <div style={{
+                  maxHeight: 240, overflow: "auto", marginBottom: 16,
+                  border: "1px solid #ffccc7", borderRadius: 6, padding: "4px 8px",
+                  background: "#fff",
+                }}>
+                  {errors.slice(0, 30).map((e, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        padding: "6px 0",
+                        borderBottom: i < errors.length - 1 && i < 29 ? "1px solid #ffd8d2" : "none",
+                        fontSize: 13,
+                      }}
+                    >
+                      <Tag color="error" style={{ margin: 0, flexShrink: 0 }}>
+                        {e.field || "全局"}
+                      </Tag>
+                      <Text style={{ flex: 1, wordBreak: "break-all" }}>
+                        {e.row_index > 0 ? (
+                          <Text type="secondary">第{e.row_index}行 </Text>
+                        ) : null}
+                        {e.teacher ? `${e.teacher}：` : ""}
+                        {e.reason}
+                      </Text>
+                      {e.row_index > 0 && (
+                        <Button
+                          size="small"
+                          type="primary"
+                          ghost
+                          onClick={() => jumpToError(e.row_index)}
+                          style={{ flexShrink: 0, fontSize: 12 }}
+                        >
+                          跳转 →
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  {errors.length > 30 && (
+                    <div style={{ padding: "6px 0", color: "#999", fontSize: 12, textAlign: "center" }}>
+                      ...还有 {errors.length - 30} 个违规项
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             <Tabs

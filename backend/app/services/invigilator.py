@@ -31,10 +31,18 @@ def _check_totals(exam_rows: list[ExamRow], teachers: list[TeacherInfo]) -> None
     total_slots = sum(t.slots for t in teachers)
     if total_needed != total_slots:
         from fastapi import HTTPException
-        raise HTTPException(
-            400,
-            f"总安排场次({total_slots})与需要监考位({total_needed})不匹配，请调整通讯录中的场次数字",
+        active = [t for t in teachers if t.slots > 0]
+        zero_slots = [t.name for t in teachers if t.slots == 0]
+        detail = (
+            f"考试共 {len(exam_rows)} 场，需要 {total_needed} 个监考位，"
+            f"但通讯录中 {len(active)} 位教师的安排场次合计为 {total_slots}。"
+            f"差额：{'多' if total_slots > total_needed else '少'}{abs(total_needed - total_slots)} 场。"
         )
+        if zero_slots:
+            detail += f" 场次为 0 的教师（{len(zero_slots)}人）：{'、'.join(zero_slots[:10])}"
+            if len(zero_slots) > 10:
+                detail += f" 等共{len(zero_slots)}人"
+        raise HTTPException(400, detail)
     time_slot_count = len(set(r.考试时间 for r in exam_rows))
     for t in teachers:
         if t.slots > time_slot_count:
@@ -49,9 +57,11 @@ def _check_totals(exam_rows: list[ExamRow], teachers: list[TeacherInfo]) -> None
     max_needed_per_slot = max(slot_exam_count.values()) * 2
     if max_needed_per_slot > len(teachers):
         from fastapi import HTTPException
+        max_slot = max(slot_exam_count, key=lambda k: slot_exam_count[k])
         raise HTTPException(
             400,
-            f"单个时段最多需要{max_needed_per_slot}位监考，但只有{len(teachers)}位老师，无法分配",
+            f"时段「{max_slot}」有 {slot_exam_count[max_slot]} 场考试，"
+            f"需要 {max_needed_per_slot} 位监考老师，但通讯录总共只有 {len(teachers)} 位教师",
         )
 
 
