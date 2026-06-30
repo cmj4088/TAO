@@ -996,25 +996,24 @@ const App01: React.FC = () => {
                           </span>
                         ),
                         children: (() => {
-                          // 计算该日期分组内的未达目标老师
-                          const stickers: { name: string; current: number; target: number }[] = [];
+                          // 计算该日期分组内可拖拽替换的老师贴纸
+                          const stickers: { name: string; current: number; target: number; color: string }[] = [];
                           for (const [name, info] of teacherInfoMap) {
+                            if (info.slots === 0) continue; // 跳过不参与监考的老师
                             const current = loadMap.get(name) || 0;
                             const target = info.slots;
-                            if (current < target) {
-                              // 检查当天这个老师是否有空
-                              const daySlots = new Set<string>();
-                              for (const r of g.rows) {
-                                if ((r.监考1 === name || r.监考2 === name)) {
-                                  daySlots.add(r.考试时间);
-                                }
-                              }
-                              const allDaySlots = new Set(g.rows.map(r => r.考试时间));
-                              const available = Array.from(allDaySlots).some(slot => !daySlots.has(slot)) || daySlots.size === 0;
-                              if (available) {
-                                stickers.push({ name, current, target });
+                            // 检查当天是否有空（未被占满所有时段）
+                            const daySlots = new Set<string>();
+                            for (const r of g.rows) {
+                              if ((r.监考1 === name || r.监考2 === name)) {
+                                daySlots.add(r.考试时间);
                               }
                             }
+                            const allDaySlots = new Set(g.rows.map(r => r.考试时间));
+                            const available = Array.from(allDaySlots).some(slot => !daySlots.has(slot)) || daySlots.size === 0;
+                            if (!available) continue; // 当天全满，不可拖入
+                            const color = current > target ? "red" : current < target ? "blue" : "green";
+                            stickers.push({ name, current, target, color });
                           }
                           stickers.sort((a, b) => (b.target - b.current) - (a.target - a.current) || a.name.localeCompare(b.name, "zh"));
 
@@ -1033,19 +1032,19 @@ const App01: React.FC = () => {
                                   style={{
                                     marginTop: 12,
                                     padding: "10px 12px",
-                                    background: "#fffbe6",
-                                    border: "1px solid #ffe58f",
+                                    background: "#fafafa",
+                                    border: "1px solid #d9d9d9",
                                     borderRadius: 6,
                                   }}
                                 >
                                   <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>
-                                    未达目标老师（拖拽到单元格替换）：
+                                    老师贴纸（拖拽到单元格替换）：
                                   </Text>
                                   <Space size={[4, 4]} wrap>
                                     {stickers.map((s) => (
                                       <Tag
                                         key={s.name}
-                                        color="orange"
+                                        color={s.color}
                                         draggable
                                         onDragStart={(e) => {
                                           e.dataTransfer.effectAllowed = "move";
@@ -1056,7 +1055,7 @@ const App01: React.FC = () => {
                                         }}
                                         style={{ cursor: "grab" }}
                                       >
-                                        {s.name}（{s.current}/{s.target}场）
+                                        {s.name}（{s.current}/{s.target}）
                                       </Tag>
                                     ))}
                                   </Space>
