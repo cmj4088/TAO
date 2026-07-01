@@ -36,7 +36,7 @@ export interface ExamRow {
   index: number;
   场次: string;
   班级名称: string;
-  课程名称: string;
+  教学班级名称: string;
   任课教师: string[];
   考试时间: string;
   考试地点: string;

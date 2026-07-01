@@ -66,7 +66,7 @@ def _parse_exam_schedule(file_content: bytes) -> list[ExamRow]:
             index=i,
             场次=str(row[1]) if row[1] else "",
             班级名称=str(row[6]) if row[6] else "",
-            课程名称=str(row[7]) if row[7] else "",
+            教学班级名称=str(row[5]) if row[5] else "",
             任课教师=teacher_names,
             考试时间=str(row[9]).strip() if row[9] else "",
             考试地点=str(row[10]).strip() if row[10] else "",

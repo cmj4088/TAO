@@ -55,6 +55,7 @@ const App01: React.FC = () => {
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
   const stickerTeacherRef = useRef<string | null>(null);
+  const versionRef = useRef(0);  // 操作版本号，防止旧操作的 setErrors 覆盖新操作
 
   // AI 审查状态
   const [aiReviewOpen, setAiReviewOpen] = useState(false);
@@ -246,17 +247,21 @@ const App01: React.FC = () => {
       message.warning("请先上传文件");
       return;
     }
+    versionRef.current += 1;
+    const myVersion = versionRef.current;
+
     setUndoStack((prev) => {
-      const next = [...prev, JSON.parse(JSON.stringify(examRows))];
+      const next = [...prev, JSON.parse(JSON.stringify(examRowsRef.current))];
       if (next.length > 50) next.shift();
       return next;
     });
     setLoading(true);
     try {
       const allocateRes = await client.post<AllocateResponse>("/api/app01/allocate", {
-        exam_rows: examRows,
-        teachers,
+        exam_rows: examRowsRef.current,
+        teachers: teachersRef.current,
       });
+      if (myVersion !== versionRef.current) return;
       setExamRows(allocateRes.data.exam_rows);
       setWarnings(allocateRes.data.warnings);
       setTeacherLoads(allocateRes.data.teacher_loads || {});
@@ -265,26 +270,29 @@ const App01: React.FC = () => {
       try {
         const validateRes = await client.post("/api/app01/validate", {
           exam_rows: allocateRes.data.exam_rows,
-          teachers,
+          teachers: teachersRef.current,
         });
-        setErrors(validateRes.data.errors);
-        const criticalCount = validateRes.data.errors.filter((e: ValidationError) => e.priority !== 2).length;
-        const fieldCount = validateRes.data.errors.filter((e: ValidationError) => e.priority === 2).length;
-        if (criticalCount > 0) {
-          message.warning(
-            `发现 ${criticalCount} 个严重违规（已标红）${fieldCount > 0 ? `，另有 ${fieldCount} 个场次偏差（红/蓝标记）` : ""}`,
-            5,
-          );
-        } else if (fieldCount > 0) {
-          message.info(
-            `${fieldCount} 个场次偏差，已在单元格用红/蓝色标记，拖拽预备框贴纸即可调整`
-          );
-        } else if (allocateRes.data.warnings.length > 0) {
-          message.warning(`分配完成，但有 ${allocateRes.data.warnings.length} 条警告`);
-        } else {
-          message.success("分配完成，无违规");
+        if (myVersion === versionRef.current) {
+          setErrors(validateRes.data.errors);
+          const criticalCount = validateRes.data.errors.filter((e: ValidationError) => e.priority !== 2).length;
+          const fieldCount = validateRes.data.errors.filter((e: ValidationError) => e.priority === 2).length;
+          if (criticalCount > 0) {
+            message.warning(
+              `发现 ${criticalCount} 个严重违规（已标红）${fieldCount > 0 ? `，另有 ${fieldCount} 个场次偏差（红/蓝标记）` : ""}`,
+              5,
+            );
+          } else if (fieldCount > 0) {
+            message.info(
+              `${fieldCount} 个场次偏差，已在单元格用红/蓝色标记，拖拽预备框贴纸即可调整`
+            );
+          } else if (allocateRes.data.warnings.length > 0) {
+            message.warning(`分配完成，但有 ${allocateRes.data.warnings.length} 条警告`);
+          } else {
+            message.success("分配完成，无违规");
+          }
         }
       } catch {
+        if (myVersion !== versionRef.current) return;
         setErrors([]);
         if (allocateRes.data.warnings.length > 0) {
           message.warning(`分配完成，但有 ${allocateRes.data.warnings.length} 条警告`);
@@ -293,11 +301,14 @@ const App01: React.FC = () => {
         }
       }
     } catch (err: any) {
+      if (myVersion !== versionRef.current) return;
       message.error(err?.response?.data?.detail || "分配失败");
     } finally {
-      setLoading(false);
+      if (myVersion === versionRef.current) {
+        setLoading(false);
+      }
     }
-  }, [examRows, teachers]);
+  }, [examRows]);
 
   const doValidate = useCallback(async () => {
     if (examRows.length === 0) {
@@ -365,12 +376,15 @@ const App01: React.FC = () => {
 
   const doReplace = useCallback(
     async (rowIndex: number, field: "监考1" | "监考2", newTeacher: string) => {
+      versionRef.current += 1;
+      const myVersion = versionRef.current;
+
       setUndoStack((prev) => {
-        const next = [...prev, JSON.parse(JSON.stringify(examRows))];
+        const next = [...prev, JSON.parse(JSON.stringify(examRowsRef.current))];
         if (next.length > 50) next.shift();
         return next;
       });
-      const newRows = [...examRows];
+      const newRows = examRowsRef.current.map((r) => ({ ...r }));
       const tgtRow = newRows.find((r) => r.index === rowIndex);
       if (!tgtRow) return;
       tgtRow[field] = newTeacher || null;
@@ -390,22 +404,27 @@ const App01: React.FC = () => {
         setTeacherLoads(Object.fromEntries(newLoadMap));
         const validateRes = await client.post("/api/app01/validate", {
           exam_rows: newRows,
-          teachers,
+          teachers: teachersRef.current,
         });
-        setErrors(validateRes.data.errors);
+        if (myVersion === versionRef.current) {
+          setErrors(validateRes.data.errors);
+        }
         message.success("替换成功");
       } catch (err: any) {
+        if (myVersion !== versionRef.current) return;
         message.warning("同步失败，导出结果可能与预览不一致");
         try {
           const validateRes = await client.post("/api/app01/validate", {
             exam_rows: newRows,
-            teachers,
+            teachers: teachersRef.current,
           });
-          setErrors(validateRes.data.errors);
+          if (myVersion === versionRef.current) {
+            setErrors(validateRes.data.errors);
+          }
         } catch {}
       }
     },
-    [examRows, teachers],
+    [teachers],
   );
 
   const handleDragStart = (rowIndex: number, field: string, teacher: string) => {
@@ -449,13 +468,17 @@ const App01: React.FC = () => {
         return;
       }
 
+      versionRef.current += 1;
+      const myVersion = versionRef.current;
+
       setUndoStack((prev) => {
-        const next = [...prev, JSON.parse(JSON.stringify(examRows))];
+        const next = [...prev, JSON.parse(JSON.stringify(examRowsRef.current))];
         if (next.length > 50) next.shift();
         return next;
       });
 
-      const newRows = [...examRows];
+      const curRows = examRowsRef.current;
+      const newRows = curRows.map((r) => ({ ...r }));
       const srcRow = newRows.find((r) => r.index === dragSource.rowIndex);
       const tgtRow = newRows.find((r) => r.index === targetRowIndex);
 
@@ -471,7 +494,7 @@ const App01: React.FC = () => {
 
       srcRow[srcField] = tgtVal;
       tgtRow[tgtField] = srcVal;
-      setExamRows([...newRows]);
+      setExamRows(newRows);
       setDragSource(null);
 
       try {
@@ -489,21 +512,26 @@ const App01: React.FC = () => {
         setTeacherLoads(Object.fromEntries(newLoadMap));
         const validateRes = await client.post("/api/app01/validate", {
           exam_rows: newRows,
-          teachers,
+          teachers: teachersRef.current,
         });
-        setErrors(validateRes.data.errors);
+        if (myVersion === versionRef.current) {
+          setErrors(validateRes.data.errors);
+        }
       } catch {
+        if (myVersion !== versionRef.current) return;
         message.warning("同步失败，导出结果可能与预览不一致");
         try {
           const validateRes = await client.post("/api/app01/validate", {
             exam_rows: newRows,
-            teachers,
+            teachers: teachersRef.current,
           });
-          setErrors(validateRes.data.errors);
+          if (myVersion === versionRef.current) {
+            setErrors(validateRes.data.errors);
+          }
         } catch {}
       }
     },
-    [dragSource, examRows, teachers, doReplace],
+    [dragSource, teachers, doReplace],
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -512,6 +540,9 @@ const App01: React.FC = () => {
 
   const doUndo = useCallback(async () => {
     if (undoStackRef.current.length === 0) return;
+    versionRef.current += 1;
+    const myVersion = versionRef.current;
+
     const snapshot = undoStackRef.current[undoStackRef.current.length - 1];
     const remaining = undoStackRef.current.length - 1;
     setUndoStack((prev) => prev.slice(0, -1));
@@ -528,11 +559,14 @@ const App01: React.FC = () => {
         exam_rows: snapshot,
         teachers: teachersRef.current,
       });
-      setErrors(validateRes.data.errors || []);
+      if (myVersion === versionRef.current) {
+        setErrors(validateRes.data.errors || []);
+        message.info(`已撤销（剩余 ${remaining} 步）`);
+      }
     } catch {
+      if (myVersion !== versionRef.current) return;
       message.warning("撤销同步失败，请重试");
     }
-    message.info(`已撤销（剩余 ${remaining} 步）`);
   }, []);
 
   // AI 审查
@@ -690,7 +724,7 @@ const App01: React.FC = () => {
   const teacherSummaryMap = new Map<string, TeacherSession[]>();
   for (const r of examRows) {
     const date = extractDate(r.考试时间);
-    const base = { date, time: r.考试时间, location: r.考试地点, className: r.班级名称, courseName: r.课程名称, sessionName: r.场次 };
+    const base = { date, time: r.考试时间, location: r.考试地点, className: r.班级名称, courseName: r.教学班级名称, sessionName: r.场次 };
     if (r.监考1) {
       if (!teacherSummaryMap.has(r.监考1)) teacherSummaryMap.set(r.监考1, []);
       teacherSummaryMap.get(r.监考1)!.push({ ...base, type: "监考1" });
@@ -725,7 +759,7 @@ const App01: React.FC = () => {
     { title: "序号", dataIndex: "index", width: 55 },
     { title: "场次", dataIndex: "场次", width: 55 },
     { title: "班级", dataIndex: "班级名称", width: 160, ellipsis: true },
-    { title: "课程", dataIndex: "课程名称", width: 200, ellipsis: true },
+    { title: "教学班级", dataIndex: "教学班级名称", width: 200, ellipsis: true },
     {
       title: "任课教师",
       dataIndex: "任课教师",
@@ -746,10 +780,9 @@ const App01: React.FC = () => {
         const isError = cellErrors && cellErrors.length > 0;
         const actual = val ? (loadMap.get(val) || 0) : 0;
         const target = val ? (teacherSlotsMap.get(val) || 0) : 0;
-        let tagColor = "blue";
+        let tagColor = "green";
         if (isError) tagColor = "red";
-        else if (val && actual > target) tagColor = "red";
-        else if (val && actual < target) tagColor = "blue";
+        else if (val && actual !== target) tagColor = "purple";
         const label = val ? `${val}(${actual}/${target})` : "";
         const content = val ? (
           <Tag
@@ -810,8 +843,7 @@ const App01: React.FC = () => {
         const target = val ? (teacherSlotsMap.get(val) || 0) : 0;
         let tagColor = "green";
         if (isError) tagColor = "red";
-        else if (val && actual > target) tagColor = "red";
-        else if (val && actual < target) tagColor = "blue";
+        else if (val && actual !== target) tagColor = "purple";
         const label = val ? `${val}(${actual}/${target})` : "";
         const content = val ? (
           <Tag
@@ -1079,7 +1111,7 @@ const App01: React.FC = () => {
                             const allDaySlots = new Set(g.rows.map(r => r.考试时间));
                             const available = Array.from(allDaySlots).some(slot => !daySlots.has(slot)) || daySlots.size === 0;
                             if (!available) continue; // 当天全满，不可拖入
-                            const color = current > target ? "red" : current < target ? "blue" : "green";
+                            const color = current !== target ? "purple" : "green";
                             stickers.push({ name, current, target, color });
                           }
                           stickers.sort((a, b) => (b.target - b.current) - (a.target - a.current) || a.name.localeCompare(b.name, "zh"));
@@ -1210,8 +1242,7 @@ const App01: React.FC = () => {
                           render: (count: number, record: any) => {
                             const target = record.slots;
                             let color = "green";
-                            if (count > target) color = "red";
-                            else if (count < target) color = "blue";
+                            if (count !== target) color = "purple";
                             return <Tag color={color}>{count} / {target} 场</Tag>;
                           },
                         },

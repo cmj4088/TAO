@@ -536,7 +536,7 @@ def _ai_allocate(
         exam_desc.append(f"\n时间段 {ts}（需{len(exams)*2}位监考）：")
         for r in exams:
             exam_desc.append(
-                f"  row_{r.index}: 班级={r.班级名称}, 课程={r.课程名称}, "
+                f"  row_{r.index}: 班级={r.班级名称}, 教学班级={r.教学班级名称}, "
                 f"任课教师=[{'、'.join(r.任课教师)}], 地点={r.考试地点}"
             )
 
