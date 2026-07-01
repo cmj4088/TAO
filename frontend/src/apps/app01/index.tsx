@@ -392,8 +392,15 @@ const App01: React.FC = () => {
         });
         setErrors(validateRes.data.errors);
         message.success("替换成功");
-      } catch {
-        // 静默
+      } catch (err: any) {
+        // 校验失败也要尝试重新校验
+        try {
+          const validateRes = await client.post("/api/app01/validate", {
+            exam_rows: newRows,
+            teachers,
+          });
+          setErrors(validateRes.data.errors);
+        } catch {}
       }
     },
     [examRows, teachers],
@@ -484,7 +491,13 @@ const App01: React.FC = () => {
         });
         setErrors(validateRes.data.errors);
       } catch {
-        // 静默失败
+        try {
+          const validateRes = await client.post("/api/app01/validate", {
+            exam_rows: newRows,
+            teachers,
+          });
+          setErrors(validateRes.data.errors);
+        } catch {}
       }
     },
     [dragSource, examRows, teachers, doReplace],
