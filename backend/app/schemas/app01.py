@@ -13,7 +13,7 @@ class ExamRow(BaseModel):
     index: int
     场次: str
     班级名称: str
-    课程名称: str
+    教学班级名称: str
     任课教师: list[str]
     考试时间: str
     考试地点: str

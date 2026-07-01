@@ -70,7 +70,7 @@ async def review_stream(
     for r in exam_rows:
         teachers_str = "、".join(r.任课教师)
         exam_desc.append(
-            f"  row_{r.index}: 场次={r.场次}, 班级={r.班级名称}, 课程={r.课程名称}, "
+            f"  row_{r.index}: 场次={r.场次}, 班级={r.班级名称}, 教学班级={r.教学班级名称}, "
             f"任课教师=[{teachers_str}], 时间={r.考试时间}, 地点={r.考试地点}, "
             f"监考1={r.监考1 or '无'}, 监考2={r.监考2 or '无'}"
         )
