@@ -344,6 +344,8 @@ const App01: React.FC = () => {
 
   const doActualExport = useCallback(async () => {
     try {
+      // 先同步最新状态到后端，确保导出与预览一致
+      await client.post("/api/app01/set-rows", { exam_rows: examRowsRef.current });
       const res = await client.get("/api/app01/export", {
         responseType: "blob",
       });
@@ -393,7 +395,7 @@ const App01: React.FC = () => {
         setErrors(validateRes.data.errors);
         message.success("替换成功");
       } catch (err: any) {
-        // 校验失败也要尝试重新校验
+        message.warning("同步失败，导出结果可能与预览不一致");
         try {
           const validateRes = await client.post("/api/app01/validate", {
             exam_rows: newRows,
@@ -491,6 +493,7 @@ const App01: React.FC = () => {
         });
         setErrors(validateRes.data.errors);
       } catch {
+        message.warning("同步失败，导出结果可能与预览不一致");
         try {
           const validateRes = await client.post("/api/app01/validate", {
             exam_rows: newRows,
@@ -507,7 +510,7 @@ const App01: React.FC = () => {
     e.preventDefault();
   };
 
-  const doUndo = useCallback(() => {
+  const doUndo = useCallback(async () => {
     if (undoStackRef.current.length === 0) return;
     const snapshot = undoStackRef.current[undoStackRef.current.length - 1];
     const remaining = undoStackRef.current.length - 1;
@@ -519,11 +522,16 @@ const App01: React.FC = () => {
       if (r.监考2) newLoadMap.set(r.监考2, (newLoadMap.get(r.监考2) || 0) + 1);
     }
     setTeacherLoads(Object.fromEntries(newLoadMap));
-    client.post("/api/app01/set-rows", { exam_rows: snapshot }).catch(() => {});
-    client.post("/api/app01/validate", {
-      exam_rows: snapshot,
-      teachers: teachersRef.current,
-    }).then((res) => { setErrors(res?.data?.errors || []); }).catch(() => {});
+    try {
+      await client.post("/api/app01/set-rows", { exam_rows: snapshot });
+      const validateRes = await client.post("/api/app01/validate", {
+        exam_rows: snapshot,
+        teachers: teachersRef.current,
+      });
+      setErrors(validateRes.data.errors || []);
+    } catch {
+      message.warning("撤销同步失败，请重试");
+    }
     message.info(`已撤销（剩余 ${remaining} 步）`);
   }, []);
 
