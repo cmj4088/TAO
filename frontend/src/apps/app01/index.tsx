@@ -247,7 +247,7 @@ const App01: React.FC = () => {
       return;
     }
     setUndoStack((prev) => {
-      const next = [...prev, examRows];
+      const next = [...prev, JSON.parse(JSON.stringify(examRows))];
       if (next.length > 50) next.shift();
       return next;
     });
@@ -364,7 +364,7 @@ const App01: React.FC = () => {
   const doReplace = useCallback(
     async (rowIndex: number, field: "监考1" | "监考2", newTeacher: string) => {
       setUndoStack((prev) => {
-        const next = [...prev, examRows];
+        const next = [...prev, JSON.parse(JSON.stringify(examRows))];
         if (next.length > 50) next.shift();
         return next;
       });
@@ -448,7 +448,7 @@ const App01: React.FC = () => {
       }
 
       setUndoStack((prev) => {
-        const next = [...prev, examRows];
+        const next = [...prev, JSON.parse(JSON.stringify(examRows))];
         if (next.length > 50) next.shift();
         return next;
       });
