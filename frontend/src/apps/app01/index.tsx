@@ -736,6 +736,8 @@ const App01: React.FC = () => {
             draggable
             onDragStart={() => handleDragStart(record.index, "监考1", val || "")}
             onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            onDrop={() => handleDrop(record.index, "监考1")}
             style={{ cursor: "grab", margin: 0 }}
           >
             {label}
@@ -796,6 +798,8 @@ const App01: React.FC = () => {
             draggable
             onDragStart={() => handleDragStart(record.index, "监考2", val || "")}
             onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            onDrop={() => handleDrop(record.index, "监考2")}
             style={{ cursor: "grab", margin: 0 }}
           >
             {label}
