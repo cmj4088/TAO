@@ -404,6 +404,21 @@ const App01: React.FC = () => {
     setDragSource({ rowIndex, field, teacher });
   };
 
+  const handleDragEnd = useCallback(async () => {
+    // 拖拽结束但未被任何目标处理 → 清空源单元格
+    const src = dragSourceRef.current;
+    if (!src) return;
+    // 延迟检查，让 drop 事件先触发
+    setTimeout(async () => {
+      const still = dragSourceRef.current;
+      if (still) {
+        // 未被处理，清空源单元格
+        await doReplace(still.rowIndex, still.field as "监考1" | "监考2", "");
+        setDragSource(null);
+      }
+    }, 50);
+  }, [doReplace]);
+
   const handleStickerDragStart = (teacherName: string) => {
     stickerTeacherRef.current = teacherName;
     setDragSource(null);
@@ -720,6 +735,7 @@ const App01: React.FC = () => {
             color={tagColor}
             draggable
             onDragStart={() => handleDragStart(record.index, "监考1", val || "")}
+            onDragEnd={handleDragEnd}
             style={{ cursor: "grab", margin: 0 }}
           >
             {label}
@@ -779,6 +795,7 @@ const App01: React.FC = () => {
             color={tagColor}
             draggable
             onDragStart={() => handleDragStart(record.index, "监考2", val || "")}
+            onDragEnd={handleDragEnd}
             style={{ cursor: "grab", margin: 0 }}
           >
             {label}
