@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import { Card, Form, Select, Divider, InputNumber, Button, message } from "antd";
+import { Link } from "react-router-dom";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const SettingsPage: React.FC = () => {
@@ -45,7 +46,7 @@ const SettingsPage: React.FC = () => {
         </Form.Item>
         <Divider />
         <Form.Item label="大模型配置">
-          <span style={{ color: "#999" }}>大模型 Key 和模型名称在服务端代码中配置，无需在前端修改</span>
+          <Link to="/admin">前往管理后台配置 API URL、Key 和模型名称 →</Link>
         </Form.Item>
       </Form>
     </Card>

@@ -1,6 +1,6 @@
 {
   "name": "jiaowuban-agent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "教务办·智能体",
   "main": "electron-main/main.cjs",
   "scripts": {
@@ -26,8 +26,8 @@
       "target": "nsis"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false
     },
     "publish": {
       "provider": "github",

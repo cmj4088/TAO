@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   platform: process.platform,
-  version: "0.1.1",
+  version: "0.1.2",
 
   onUpdateStatus: (callback) => {
     ipcRenderer.on("update-status", (_event, data) => callback(data));
