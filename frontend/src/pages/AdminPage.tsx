@@ -3,7 +3,7 @@ import { Card, Form, Input, Button, message, Spin } from "antd";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const AdminPage: React.FC = () => {
-  const { llmUrl, llmKey, loading, setLlmConfig, saveLlmConfig, loadFromServer } = useSettingsStore();
+  const { llmUrl, llmKey, llmModel, loading, setLlmConfig, saveLlmConfig, loadFromServer } = useSettingsStore();
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -31,14 +31,21 @@ const AdminPage: React.FC = () => {
           <Input
             placeholder="https://api.openai.com/v1"
             value={llmUrl}
-            onChange={(e) => setLlmConfig(e.target.value, llmKey)}
+            onChange={(e) => setLlmConfig(e.target.value, llmKey, llmModel)}
           />
         </Form.Item>
         <Form.Item label="API Key">
           <Input.Password
             placeholder="sk-..."
             value={llmKey}
-            onChange={(e) => setLlmConfig(llmUrl, e.target.value)}
+            onChange={(e) => setLlmConfig(llmUrl, e.target.value, llmModel)}
+          />
+        </Form.Item>
+        <Form.Item label="模型名称">
+          <Input
+            placeholder="deepseek-v4-pro-260425"
+            value={llmModel}
+            onChange={(e) => setLlmConfig(llmUrl, llmKey, e.target.value)}
           />
         </Form.Item>
         <Form.Item>

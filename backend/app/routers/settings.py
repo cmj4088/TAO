@@ -25,6 +25,7 @@ def get_llm_config():
     return LLMConfig(
         url=ConfigManager.get("llm_url", ""),
         key=ConfigManager.get("llm_key", ""),
+        model=ConfigManager.get("llm_model", ""),
     )
 
 
@@ -33,6 +34,7 @@ def update_llm_config(config: LLMConfig):
     """更新大模型配置"""
     ConfigManager.set("llm_url", config.url)
     ConfigManager.set("llm_key", config.key)
+    ConfigManager.set("llm_model", config.model)
     return {"ok": True}
 
 

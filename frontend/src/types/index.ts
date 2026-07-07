@@ -16,6 +16,7 @@ export interface SettingItem {
 export interface LLMConfig {
   url: string;
   key: string;
+  model: string;
 }
 
 /** 版本信息 */

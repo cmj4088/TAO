@@ -15,21 +15,31 @@ _proxy_handler = urllib.request.ProxyHandler({})
 _opener = urllib.request.build_opener(_proxy_handler)
 
 
+def _get_llm_config(api_key: str | None = None, model: str | None = None, url: str | None = None) -> tuple[str, str, str]:
+    """读取 LLM 配置：优先使用传入参数 → ConfigManager 数据库配置 → 硬编码默认值"""
+    from app.config import ConfigManager
+    final_url = url or ConfigManager.get("llm_url", "") or ARK_URL
+    final_key = api_key or ConfigManager.get("llm_key", "") or ARK_KEY
+    final_model = model or ConfigManager.get("llm_model", "") or AI_MODEL
+    return final_url, final_key, final_model
+
+
 class AiStreamError(Exception):
     """AI 流式调用错误，携带用户可读消息"""
 
 
-def _call_ai_stream(prompt: str):
+def _call_ai_stream(prompt: str, api_key: str | None = None):
+    url, key, model = _get_llm_config(api_key=api_key)
     body = json.dumps({
-        "model": AI_MODEL,
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
         "stream": True,
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        ARK_URL, data=body,
-        headers={"Authorization": f"Bearer {ARK_KEY}", "Content-Type": "application/json"},
+        url, data=body,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
 
     try:

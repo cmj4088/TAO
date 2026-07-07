@@ -14,6 +14,7 @@ class SettingsBatch(BaseModel):
 class LLMConfig(BaseModel):
     url: str = ""
     key: str = ""
+    model: str = ""
 
 
 class AppInfo(BaseModel):

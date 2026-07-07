@@ -12,6 +12,15 @@ ARK_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
 ARK_KEY = "ark-00ec7229-97af-43d2-a5ed-865fc9de3ad1-fb92c"
 MODEL_ID = "deepseek-v4-pro-260425"
 
+
+def _get_llm_config(api_key: str | None = None, model: str | None = None, url: str | None = None) -> tuple[str, str, str]:
+    """读取 LLM 配置：优先使用传入参数 → ConfigManager 数据库配置 → 硬编码默认值"""
+    from app.config import ConfigManager
+    final_url = url or ConfigManager.get("llm_url", "") or ARK_URL
+    final_key = api_key or ConfigManager.get("llm_key", "") or ARK_KEY
+    final_model = model or ConfigManager.get("llm_model", "") or MODEL_ID
+    return final_url, final_key, final_model
+
 # ===== Python 层面确定性后处理补丁 =====
 
 WRONG_SCHOOL_NAME = "深圳信息职业技术学院"
@@ -713,8 +722,9 @@ _opener = urllib.request.build_opener(_proxy_handler)
 
 
 def _call_api(api_key: str, prompt: str) -> str:
+    url, key, model = _get_llm_config(api_key=api_key)
     body = json.dumps({
-        "model": MODEL_ID,
+        "model": model,
         "messages": [
             {"role": "user", "content": prompt},
         ],
@@ -722,10 +732,10 @@ def _call_api(api_key: str, prompt: str) -> str:
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        ARK_URL,
+        url,
         data=body,
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         },
     )
@@ -742,7 +752,7 @@ def _call_api(api_key: str, prompt: str) -> str:
 
 
 async def review(filepath: str, filename: str, api_key: str | None = None) -> tuple[list[dict], dict, str]:
-    key = api_key or ARK_KEY
+    _, key, _ = _get_llm_config(api_key=api_key)
     doc_text = extract_doc_text(filepath)
     prompt = build_prompt(doc_text, filename)
     content = await asyncio.to_thread(_call_api, key, prompt)
@@ -752,8 +762,9 @@ async def review(filepath: str, filename: str, api_key: str | None = None) -> tu
 
 
 async def _call_api_stream(api_key: str, prompt: str):
+    url, key, model = _get_llm_config(api_key=api_key)
     body = {
-        "model": MODEL_ID,
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
         "stream": True,
@@ -761,10 +772,10 @@ async def _call_api_stream(api_key: str, prompt: str):
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
         async with client.stream(
-            "POST", ARK_URL,
+            "POST", url,
             json=body,
             headers={
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
             },
         ) as response:
@@ -792,7 +803,7 @@ async def _call_api_stream(api_key: str, prompt: str):
 
 
 async def review_stream(filepath: str, filename: str, api_key: str | None = None):
-    key = api_key or ARK_KEY
+    _, key, _ = _get_llm_config(api_key=api_key)
     doc_text = extract_doc_text(filepath)
     prompt = build_prompt(doc_text, filename)
 

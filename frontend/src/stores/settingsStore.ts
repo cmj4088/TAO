@@ -8,10 +8,11 @@ interface SettingsState {
   apiBase: string;
   llmUrl: string;
   llmKey: string;
+  llmModel: string;
   loading: boolean;
   app02AiConcurrency: number;
   setTheme: (t: ThemeMode) => void;
-  setLlmConfig: (url: string, key: string) => void;
+  setLlmConfig: (url: string, key: string, model: string) => void;
   saveLlmConfig: () => Promise<void>;
   loadFromServer: () => Promise<void>;
   setApp02AiConcurrency: (n: number) => void;
@@ -24,23 +25,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiBase: "http://10.50.150.176:8006",
   llmUrl: "",
   llmKey: "",
+  llmModel: "",
   loading: false,
   app02AiConcurrency: 1,
 
   setTheme: (theme) => set({ theme }),
 
-  setLlmConfig: (url, key) => set({ llmUrl: url, llmKey: key }),
+  setLlmConfig: (url, key, model) => set({ llmUrl: url, llmKey: key, llmModel: model }),
 
   saveLlmConfig: async () => {
-    const { llmUrl, llmKey } = get();
-    await client.put("/api/admin/llm", { url: llmUrl, key: llmKey });
+    const { llmUrl, llmKey, llmModel } = get();
+    await client.put("/api/admin/llm", { url: llmUrl, key: llmKey, model: llmModel });
   },
 
   loadFromServer: async () => {
     set({ loading: true });
     try {
       const res = await client.get("/api/admin/llm");
-      set({ llmUrl: res.data.url, llmKey: res.data.key, loading: false });
+      set({ llmUrl: res.data.url, llmKey: res.data.key, llmModel: res.data.model, loading: false });
     } catch {
       set({ loading: false });
     }

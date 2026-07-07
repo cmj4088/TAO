@@ -26,6 +26,8 @@ def init_db():
             db.add(Setting(key="llm_key", value="ark-00ec7229-97af-43d2-a5ed-865fc9de3ad1-fb92c"))
         if not db.query(Setting).filter(Setting.key == "llm_url").first():
             db.add(Setting(key="llm_url", value="https://ark.cn-beijing.volces.com/api/v3/chat/completions"))
+        if not db.query(Setting).filter(Setting.key == "llm_model").first():
+            db.add(Setting(key="llm_model", value="deepseek-v4-pro-260425"))
         if not db.query(Setting).filter(Setting.key == "app02_ai_concurrency").first():
             db.add(Setting(key="app02_ai_concurrency", value="1"))
         db.commit()
