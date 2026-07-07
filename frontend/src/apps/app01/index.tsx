@@ -585,7 +585,7 @@ const App01: React.FC = () => {
     try {
       const res = await client.post("/api/app01/ai-review");
       const taskId = res.data.task_id;
-      const baseUrl = client.defaults.baseURL || "http://localhost:8002";
+      const baseUrl = client.defaults.baseURL || "http://10.50.150.176:8006";
       const url = `${baseUrl}/api/app01/ai-review/stream/${taskId}`;
       const es = new EventSource(url);
       aiEventSourceRef.current = es;

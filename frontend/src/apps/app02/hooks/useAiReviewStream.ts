@@ -11,7 +11,7 @@ export interface StreamState {
   allDone: boolean;
 }
 
-const API_BASE = "http://localhost:8002";
+const API_BASE = "http://10.50.150.176:8006";
 
 export function useAiReviewStream(taskId: string | null) {
   const [state, setState] = useState<StreamState>({

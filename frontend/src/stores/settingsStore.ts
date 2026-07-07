@@ -21,7 +21,7 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   theme: "light",
-  apiBase: "http://localhost:8002",
+  apiBase: "http://10.50.150.176:8006",
   llmUrl: "",
   llmKey: "",
   loading: false,

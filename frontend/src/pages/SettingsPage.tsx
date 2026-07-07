@@ -45,7 +45,7 @@ const SettingsPage: React.FC = () => {
         </Form.Item>
         <Divider />
         <Form.Item label="大模型配置">
-          <span style={{ color: "#999" }}>请在「管理后台」中配置大模型的 URL 和 Key</span>
+          <span style={{ color: "#999" }}>大模型 Key 和模型名称在服务端代码中配置，无需在前端修改</span>
         </Form.Item>
       </Form>
     </Card>
