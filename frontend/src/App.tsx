@@ -4,6 +4,7 @@ import { ConfigProvider, App as AntApp } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import ConsoleLayout from "@/components/Layout/ConsoleLayout";
 import UpdateNotification from "@/components/UpdateNotification";
+import ConnectionBanner from "@/components/ConnectionBanner";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const Loading = () => (
@@ -24,6 +25,7 @@ const App: React.FC = () => {
       }}
     >
       <AntApp>
+        <ConnectionBanner />
         <UpdateNotification />
         <BrowserRouter>
           <Suspense fallback={<Loading />}>
