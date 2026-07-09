@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db
 from app.routers import settings, app01, app02
 
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 
 REGISTERED_APPS = [
     {"id": "app01", "name": "监考分配", "description": "自动分配监考员，支持拖拽调整"},
