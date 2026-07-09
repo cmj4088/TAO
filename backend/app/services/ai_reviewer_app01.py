@@ -7,7 +7,6 @@ import socket
 from app.schemas.app01 import ExamRow, TeacherInfo
 
 ARK_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
-ARK_KEY = "ark-00ec7229-97af-43d2-a5ed-865fc9de3ad1-fb92c"
 AI_MODEL = "deepseek-v4-pro-260425"
 AI_TIMEOUT = 120
 
@@ -16,10 +15,10 @@ _opener = urllib.request.build_opener(_proxy_handler)
 
 
 def _get_llm_config(api_key: str | None = None, model: str | None = None, url: str | None = None) -> tuple[str, str, str]:
-    """读取 LLM 配置：优先使用传入参数 → ConfigManager 数据库配置 → 硬编码默认值"""
+    """读取 LLM 配置：优先使用传入参数 → ConfigManager 数据库配置 → 默认值"""
     from app.config import ConfigManager
     final_url = url or ConfigManager.get("llm_url", "") or ARK_URL
-    final_key = api_key or ConfigManager.get("llm_key", "") or ARK_KEY
+    final_key = api_key or ConfigManager.get("llm_key", "")
     final_model = model or ConfigManager.get("llm_model", "") or AI_MODEL
     return final_url, final_key, final_model
 
