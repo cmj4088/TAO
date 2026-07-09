@@ -13,8 +13,10 @@ class SettingsBatch(BaseModel):
 
 class LLMConfig(BaseModel):
     url: str = ""
-    key: str = ""
+    key: str = ""              # 前端返回脱敏版本，如 ark-00ec****b92c
     model: str = ""
+    has_key: bool = False      # 是否已配置 API Key（用于前端判断显示状态）
+    key_changed: bool = False  # 前端标记：用户是否输入了新 key（替代 "****" 字符串判断）
 
 
 class AppInfo(BaseModel):
