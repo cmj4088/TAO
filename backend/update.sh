@@ -30,12 +30,12 @@ sleep 3
 echo ""
 if curl -sf http://localhost:8002/api/version > /dev/null 2>&1; then
     VERSION=$(curl -s http://localhost:8002/api/version | grep -o '"version":"[^"]*"')
-    echo "✅ 更新成功！后端版本: $VERSION"
+    echo "[OK] 更新成功！后端版本: $VERSION"
     echo ""
     echo "LLM 配置接口验证:"
     curl -s http://localhost:8002/api/admin/llm | python3 -m json.tool 2>/dev/null || echo "  (需要安装 python3 查看格式化输出)"
 else
-    echo "❌ 健康检查失败，请检查 docker compose logs"
+    echo "[FAIL] 健康检查失败，请检查 docker compose logs"
     exit 1
 fi
 

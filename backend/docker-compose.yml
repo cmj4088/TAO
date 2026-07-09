@@ -5,4 +5,9 @@ services:
       - "8002:8002"
     volumes:
       - ./data:/app/data
+    environment:
+      # AES-256 加密密钥，用于保护 API Key 等敏感配置
+      # 生产环境请务必修改为随机字符串！
+      # 生成方式: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+      - ENCRYPTION_KEY=change-me-to-a-random-secret-string
     restart: unless-stopped
