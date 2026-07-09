@@ -27,7 +27,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import client from "@/api/client";
+import client, { API_BASE } from "@/api/client";
 import type {
   FileReviewResult,
   ReviewResponse,
@@ -766,7 +766,7 @@ const App02: React.FC = () => {
           <div style={{ display: "flex", gap: 16, height: "calc(100vh - 200px)", minHeight: 500 }}>
             <div style={{ flex: 1, border: "1px solid #d9d9d9", borderRadius: 8, overflow: "hidden" }}>
               <iframe
-                src={`http://10.50.150.176:8006/api/app02/preview/${previewFileId}`}
+                src={`${API_BASE}/api/app02/preview/${previewFileId}`}
                 style={{ width: "100%", height: "100%", border: "none" }}
               />
             </div>

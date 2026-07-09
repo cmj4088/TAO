@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { AiReviewFindingApp02, SseTokenEvent, SseReasoningEvent, SseFileDoneEvent, SseFileErrorEvent } from "@/types";
+import { API_BASE } from "@/api/client";
 
 export interface StreamState {
   streamingTexts: Record<string, string>;
@@ -10,8 +11,6 @@ export interface StreamState {
   streamPhase: Record<string, "reasoning" | "answering" | "done" | "error">;
   allDone: boolean;
 }
-
-const API_BASE = "http://10.50.150.176:8006";
 
 export function useAiReviewStream(taskId: string | null) {
   const [state, setState] = useState<StreamState>({
