@@ -50,15 +50,12 @@ git tag -af "v$VERSION" -m "v$VERSION"
 git push origin "v$VERSION" --force
 echo "  OK: combined-test + v$VERSION"
 
-# 6. 创建正式 Release 并上传文件
-echo "[6/7] 发布到 GitHub..."
+# 6. 复制到本地更新服务器目录
+echo "[6/7] 部署到本地更新服务器..."
 cd "$ROOT/前端"
 
-# latest.yml 检查
-if [ ! -f "latest.yml" ]; then
-  echo "  错误: latest.yml 未找到"
-  exit 1
-fi
+UPDATE_DIR="$ROOT/update-server"
+mkdir -p "$UPDATE_DIR"
 
 # 新命名规范：v{version}-jiaowuban-agent-setup.exe
 NEW_EXE_NAME="v${VERSION}-jiaowuban-agent-setup.exe"
@@ -66,27 +63,24 @@ NEW_EXE_BLOCKMAP="${NEW_EXE_NAME}.blockmap"
 
 # electron-builder 生成的文件名基于 productName（中文）
 PRODUCT_EXE="教务办智能体 Setup ${VERSION}.exe"
-cp "$PRODUCT_EXE" "$NEW_EXE_NAME"
-cp "${PRODUCT_EXE}.blockmap" "$NEW_EXE_BLOCKMAP"
-echo "  OK: $PRODUCT_EXE → $NEW_EXE_NAME"
+cp "$PRODUCT_EXE" "$UPDATE_DIR/$NEW_EXE_NAME"
+cp "${PRODUCT_EXE}.blockmap" "$UPDATE_DIR/$NEW_EXE_BLOCKMAP"
 
-# 同步更新 latest.yml 中的 path 字段
-sed -i "s|^path:.*|path: ${NEW_EXE_NAME}|" latest.yml
+# 同步更新 latest.yml 中的 path 和 url 字段
+sed "s|^path:.*|path: ${NEW_EXE_NAME}|" latest.yml | sed "s|  - url:.*|  - url: ${NEW_EXE_NAME}|" > "$UPDATE_DIR/latest.yml"
 
-# 删除可能存在的旧 Draft Release（electron-builder 残留）
-gh release delete "v$VERSION" --yes 2>/dev/null || true
-gh release delete "$VERSION" --yes 2>/dev/null || true
+echo "  OK: $UPDATE_DIR/"
+echo "  - $NEW_EXE_NAME"
+echo "  - $NEW_EXE_BLOCKMAP"
+echo "  - latest.yml"
 
-# 创建正式 Release（draft=false 是关键！）
-gh release create "v$VERSION" \
-  "$NEW_EXE_NAME" \
-  "$NEW_EXE_BLOCKMAP" \
-  "latest.yml" \
-  --title "v$VERSION" \
-  --notes "教务办·智能体 v$VERSION" \
-  --draft=false
-
-echo "  OK: $NEW_EXE_NAME + $NEW_EXE_BLOCKMAP + latest.yml"
+# 验证
+echo ""
+echo "更新文件清单："
+ls -lh "$UPDATE_DIR/"
+echo ""
+echo "  ✅ 本地更新服务器部署完成"
+echo "  启动方式: cd $UPDATE_DIR && python3 -m http.server 8080"
 
 # 7. 打包后端
 echo "[7/7] 打包后端..."
@@ -102,18 +96,7 @@ find jiaowuban-backend -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null
 find jiaowuban-backend -type f -name '*.pyc' -delete 2>/dev/null
 echo "  OK: jiaowuban-backend/ 已打包"
 
-# 验证
-echo ""
-ASSETS=$(gh release view "v$VERSION" --json assets -q '.assets[].name' 2>/dev/null)
-echo "$ASSETS"
-if echo "$ASSETS" | grep -q "latest.yml" && echo "$ASSETS" | grep -q ".exe"; then
-  echo "  ✅ Release 文件完整"
-  echo "  命名规范: v${VERSION}-jiaowuban-agent-setup.exe"
-else
-  echo "  ⚠️ 警告: Release 文件不完整"
-fi
-
 echo ""
 echo "=========================================="
 echo "  v$VERSION 发版完成！"
-echo "=========================================="
+echo "  启动更新服务器: cd update-server && python3 -m http.server 8080"

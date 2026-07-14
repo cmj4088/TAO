@@ -1,0 +1,8 @@
+version: 0.2.1
+files:
+  - url: v0.2.1-jiaowuban-agent-setup.exe
+    sha512: d3xGtHpUL8BkizJ53oUY2TRGeIDY43x7BJRQ+H6vSrKsW4F1EfBvNHbEFNZHxPNcM0D5H+d69M/A6a9DMWb+Bw==
+    size: 89424559
+path: v0.2.1-jiaowuban-agent-setup.exe
+sha512: d3xGtHpUL8BkizJ53oUY2TRGeIDY43x7BJRQ+H6vSrKsW4F1EfBvNHbEFNZHxPNcM0D5H+d69M/A6a9DMWb+Bw==
+releaseDate: '2026-07-14T10:49:07.932Z'
