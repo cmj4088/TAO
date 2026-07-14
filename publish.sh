@@ -60,19 +60,18 @@ if [ ! -f "latest.yml" ]; then
   exit 1
 fi
 
-# 从 latest.yml 获取英文 exe 文件名（electron-builder 用 name 字段生成）
-EXE_NAME=$(grep "^path:" latest.yml | head -1 | sed 's/path: //' | tr -d '[:space:]')
-EXE_BLOCKMAP="${EXE_NAME}.blockmap"
+# 新命名规范：v{version}-jiaowuban-agent-setup.exe
+NEW_EXE_NAME="v${VERSION}-jiaowuban-agent-setup.exe"
+NEW_EXE_BLOCKMAP="${NEW_EXE_NAME}.blockmap"
 
-# electron-builder 生成的文件名基于 productName（中文），复制为英文名
+# electron-builder 生成的文件名基于 productName（中文）
 PRODUCT_EXE="教务办智能体 Setup ${VERSION}.exe"
-if [ -f "$PRODUCT_EXE" ] && [ ! -f "$EXE_NAME" ]; then
-  cp "$PRODUCT_EXE" "$EXE_NAME"
-  echo "  OK: 复制 $PRODUCT_EXE → $EXE_NAME"
-fi
-if [ -f "${PRODUCT_EXE}.blockmap" ] && [ ! -f "$EXE_BLOCKMAP" ]; then
-  cp "${PRODUCT_EXE}.blockmap" "$EXE_BLOCKMAP"
-fi
+cp "$PRODUCT_EXE" "$NEW_EXE_NAME"
+cp "${PRODUCT_EXE}.blockmap" "$NEW_EXE_BLOCKMAP"
+echo "  OK: $PRODUCT_EXE → $NEW_EXE_NAME"
+
+# 同步更新 latest.yml 中的 path 字段
+sed -i "s|^path:.*|path: ${NEW_EXE_NAME}|" latest.yml
 
 # 删除可能存在的旧 Draft Release（electron-builder 残留）
 gh release delete "v$VERSION" --yes 2>/dev/null || true
@@ -80,14 +79,14 @@ gh release delete "$VERSION" --yes 2>/dev/null || true
 
 # 创建正式 Release（draft=false 是关键！）
 gh release create "v$VERSION" \
-  "$EXE_NAME" \
-  "$EXE_BLOCKMAP" \
+  "$NEW_EXE_NAME" \
+  "$NEW_EXE_BLOCKMAP" \
   "latest.yml" \
   --title "v$VERSION" \
   --notes "教务办·智能体 v$VERSION" \
   --draft=false
 
-echo "  OK: $EXE_NAME + $EXE_BLOCKMAP + latest.yml"
+echo "  OK: $NEW_EXE_NAME + $NEW_EXE_BLOCKMAP + latest.yml"
 
 # 7. 打包后端
 echo "[7/7] 打包后端..."
@@ -109,6 +108,7 @@ ASSETS=$(gh release view "v$VERSION" --json assets -q '.assets[].name' 2>/dev/nu
 echo "$ASSETS"
 if echo "$ASSETS" | grep -q "latest.yml" && echo "$ASSETS" | grep -q ".exe"; then
   echo "  ✅ Release 文件完整"
+  echo "  命名规范: v${VERSION}-jiaowuban-agent-setup.exe"
 else
   echo "  ⚠️ 警告: Release 文件不完整"
 fi
