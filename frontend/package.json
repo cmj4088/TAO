@@ -1,6 +1,6 @@
 {
   "name": "jiaowuban-agent",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "教务办·智能体",
   "main": "electron-main/main.cjs",
   "scripts": {
