@@ -30,8 +30,9 @@
       "allowToChangeInstallationDirectory": false
     },
     "publish": {
-      "provider": "generic",
-      "url": "http://10.220.122.235:8080/update"
+      "provider": "github",
+      "owner": "cmj4088",
+      "repo": "TAO"
     }
   },
   "dependencies": {
