@@ -1,139 +1,241 @@
-import React, { Suspense, lazy } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { Layout, Menu, Space, Typography, theme } from "antd";
+import React, { Suspense, lazy, useState, useCallback } from "react"
+import { useNavigate, useLocation } from "react-router-dom"
 import {
-  ScheduleOutlined,
-  FileSearchOutlined,
-  SettingOutlined,
-  ToolOutlined,
-} from "@ant-design/icons";
-import { useAppStore } from "@/stores/appStore";
-import VersionBadge from "@/components/VersionBadge";
+  Calendar,
+  FileSearch,
+  Settings,
+  User,
+  LogOut,
+  Shield,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react"
+import { useAppStore } from "@/stores/appStore"
+import { useAuthStore } from "@/stores/authStore"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
 
-const App01 = lazy(() => import("@/apps/app01"));
-const App02 = lazy(() => import("@/apps/app02"));
-const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
-
-const { Sider, Header, Content } = Layout;
-const { Text } = Typography;
+const App01 = lazy(() => import("@/apps/app01"))
+const App02 = lazy(() => import("@/apps/app02"))
+const HomePage = lazy(() => import("@/pages/HomePage"))
 
 const ICON_MAP: Record<string, React.ReactNode> = {
-  ScheduleOutlined: <ScheduleOutlined />,
-  FileSearchOutlined: <FileSearchOutlined />,
-};
+  Calendar: <Calendar className="h-5 w-5" />,
+  FileSearch: <FileSearch className="h-5 w-5" />,
+}
 
 const Loading = () => (
-  <div style={{ textAlign: "center", padding: 80, color: "#999" }}>加载中...</div>
-);
+  <div className="flex items-center justify-center p-20 text-muted-foreground">
+    <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full mr-2" />
+    加载中...
+  </div>
+)
 
 const ConsoleLayout: React.FC = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { apps, activeAppId, setActiveApp } = useAppStore();
-  const { token } = theme.useToken();
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { apps, activeAppId, setActiveApp } = useAppStore()
+  const { user, logout } = useAuthStore()
+  const [collapsed, setCollapsed] = useState(true)
+  const [hovering, setHovering] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
 
-  const menuItems = apps.map((app) => ({
-    key: app.id,
-    icon: ICON_MAP[app.icon] || <ToolOutlined />,
-    label: app.name,
-  }));
+  // 侧边栏展开条件：手动展开 / hover 展开 / 用户菜单打开时保持展开
+  const isExpanded = !collapsed || hovering || dropdownOpen
 
-  const handleMenuClick = (info: { key: string }) => {
-    setActiveApp(info.key);
-    navigate(`/app/${info.key}`);
-  };
+  const isHome = location.pathname === "/home"
 
-  const currentPath = location.pathname;
-  const isSettings = currentPath.startsWith("/settings");
+  const handleNavigate = useCallback(
+    (appId: string) => {
+      setActiveApp(appId)
+      navigate(`/app/${appId}`)
+    },
+    [setActiveApp, navigate],
+  )
 
-  // 所有 App 同时挂载，用 display 切换可见性——切换时不卸载组件，不中断 SSE / 任务
+  const handleLogout = useCallback(async () => {
+    await logout()
+    navigate("/login")
+  }, [logout, navigate])
+
+  // 获取用户名称首字母
+  const userInitial = (user?.display_name || user?.email || "U")[0].toUpperCase()
+
   return (
-    <Layout style={{ height: "100vh", overflow: "hidden" }}>
-      <Sider
-        width={200}
-        style={{
-          background: token.colorBgContainer,
-          borderRight: `1px solid ${token.colorBorderSecondary}`,
-        }}
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* VS Code 风格侧边栏 */}
+      <div
+        className={cn(
+          "flex flex-col border-r border-border bg-card transition-all duration-300 ease-in-out relative z-20",
+          isExpanded ? "w-[220px]" : "w-[56px]",
+        )}
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => { if (!dropdownOpen) setHovering(false) }}
       >
-        <div
-          style={{
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          }}
+        {/* 折叠按钮 */}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className={cn(
+            "absolute -right-3 top-8 z-30 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground transition-all",
+            !isExpanded && "opacity-0 group-hover:opacity-100",
+          )}
         >
-          <Text strong style={{ fontSize: 16, color: token.colorPrimary }}>
-            教务办·智能体
-          </Text>
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[isSettings ? "" : activeAppId]}
-          items={menuItems}
-          onClick={handleMenuClick}
-          style={{ borderRight: 0, marginTop: 8 }}
-        />
-        <div style={{ position: "absolute", bottom: 0, width: 200, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
-          <Menu
-            mode="inline"
-            selectable={false}
-            items={[
-              {
-                key: "settings",
-                icon: <SettingOutlined />,
-                label: "设置",
-                onClick: () => navigate("/settings"),
-              },
-            ]}
-            style={{ borderRight: 0 }}
-          />
-        </div>
-      </Sider>
-      <Layout>
-        <Header
-          style={{
-            background: token.colorBgContainer,
-            padding: "0 24px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-end",
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            height: 48,
-            lineHeight: "48px",
-          }}
-        >
-          <Space>
-            <VersionBadge />
-          </Space>
-        </Header>
-        <Content
-          style={{
-            padding: 24,
-            overflow: "auto",
-            background: token.colorBgLayout,
-          }}
-        >
-          <Suspense fallback={<Loading />}>
-            {/* App01 始终挂载，仅用 display 切换可见性 */}
-            <div style={{ display: !isSettings && activeAppId === "app01" ? "block" : "none" }}>
-              <App01 />
-            </div>
-            {/* App02 始终挂载，仅用 display 切换可见性 */}
-            <div style={{ display: !isSettings && activeAppId === "app02" ? "block" : "none" }}>
-              <App02 />
-            </div>
-            {/* 设置页 */}
-            <div style={{ display: isSettings ? "block" : "none" }}>
-              <SettingsPage />
-            </div>
-          </Suspense>
-        </Content>
-      </Layout>
-    </Layout>
-  );
-};
+          {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+        </button>
 
-export default ConsoleLayout;
+        {/* 标题区域 */}
+        <div className={cn(
+          "flex items-center border-b border-border h-12 overflow-hidden",
+          isExpanded ? "px-4" : "justify-center",
+        )}>
+          {isExpanded ? (
+            <span className="font-semibold text-sm text-foreground whitespace-nowrap">
+              教务办·智能体
+            </span>
+          ) : (
+            <span className="font-bold text-lg text-primary">TA</span>
+          )}
+        </div>
+
+        {/* 导航菜单 */}
+        <div className="flex-1 py-2 space-y-1 px-2">
+          {/* 首页 */}
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => navigate("/home")}
+                className={cn(
+                  "flex items-center w-full rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
+                  isExpanded ? "px-3 py-2" : "justify-center py-2",
+                  isHome && "bg-accent text-accent-foreground",
+                )}
+              >
+                <Calendar className="h-5 w-5 shrink-0" />
+                {isExpanded && <span className="ml-3 text-sm whitespace-nowrap">首页</span>}
+              </button>
+            </TooltipTrigger>
+            {!isExpanded && <TooltipContent side="right">首页</TooltipContent>}
+          </Tooltip>
+
+          {/* 应用列表 */}
+          {apps.map((app) => (
+            <Tooltip key={app.id} delayDuration={300}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => handleNavigate(app.id)}
+                  className={cn(
+                    "flex items-center w-full rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
+                    isExpanded ? "px-3 py-2" : "justify-center py-2",
+                    activeAppId === app.id && !isHome && "bg-accent text-accent-foreground",
+                  )}
+                >
+                  {ICON_MAP[app.icon] || <FileSearch className="h-5 w-5" />}
+                  {isExpanded && (
+                    <div className="ml-3 flex flex-col overflow-hidden">
+                      <span className="text-sm whitespace-nowrap">{app.name}</span>
+                    </div>
+                  )}
+                </button>
+              </TooltipTrigger>
+              {!isExpanded && <TooltipContent side="right">{app.name}</TooltipContent>}
+            </Tooltip>
+          ))}
+        </div>
+
+        {/* 底部用户区域 */}
+        <div className="border-t border-border p-2">
+          <DropdownMenu onOpenChange={setDropdownOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={cn(
+                  "flex items-center w-full rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
+                  isExpanded ? "px-3 py-2" : "justify-center py-2",
+                )}
+              >
+                <Avatar className="h-7 w-7 shrink-0">
+                  <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                    {userInitial}
+                  </AvatarFallback>
+                </Avatar>
+                {isExpanded && (
+                  <div className="ml-3 flex flex-col overflow-hidden text-left">
+                    <span className="text-sm font-medium whitespace-nowrap">
+                      {user?.display_name || user?.email || "用户"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {user?.role === "admin" ? "管理员" : "教师"}
+                    </span>
+                  </div>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" className="w-48">
+              <DropdownMenuItem onClick={() => navigate("/settings")}>
+                <Settings className="mr-2 h-4 w-4" />
+                设置
+              </DropdownMenuItem>
+              {user?.role === "admin" && (
+                <DropdownMenuItem onClick={() => navigate("/admin")}>
+                  <Shield className="mr-2 h-4 w-4" />
+                  管理后台
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={handleLogout}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                退出登录
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* 主内容区 */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* 顶部 Header */}
+        <header className="flex items-center justify-between h-12 px-4 border-b border-border bg-card shrink-0">
+          <div className="flex items-center gap-2">
+            {isHome && <span className="text-sm font-medium text-foreground">快捷入口</span>}
+            {activeAppId === "app01" && !isHome && <span className="text-sm font-medium text-foreground">监考分配</span>}
+            {activeAppId === "app02" && !isHome && <span className="text-sm font-medium text-foreground">文件审查</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            {/* VersionBadge 占位 - 后续替换 */}
+          </div>
+        </header>
+
+        {/* 内容区域 */}
+        <main className="flex-1 overflow-auto p-6">
+          {isHome ? (
+            <Suspense fallback={<Loading />}>
+              <HomePage />
+            </Suspense>
+          ) : (
+            <Suspense fallback={<Loading />}>
+              <div className={activeAppId === "app01" ? "block" : "hidden"}>
+                <App01 />
+              </div>
+              <div className={activeAppId === "app02" ? "block" : "hidden"}>
+                <App02 />
+              </div>
+            </Suspense>
+          )}
+        </main>
+      </div>
+    </div>
+  )
+}
+
+export default ConsoleLayout
