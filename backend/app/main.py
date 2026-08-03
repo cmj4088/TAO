@@ -6,8 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
 from app.routers import settings, app01, app02
+from app.m1_auth.router import router as auth_router
 
-VERSION = "0.2.1"
+VERSION = "2.0.0"
 
 REGISTERED_APPS = [
     {"id": "app01", "name": "监考分配", "description": "自动分配监考员，支持拖拽调整"},
@@ -38,6 +39,7 @@ app.add_middleware(
 app.include_router(settings.router)
 app.include_router(app01.router)
 app.include_router(app02.router)
+app.include_router(auth_router)
 
 
 @app.get("/api/version")
