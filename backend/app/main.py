@@ -8,7 +8,7 @@ from app.database import init_db
 from app.routers import settings, app01, app02
 from app.m1_auth.router import router as auth_router
 
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 
 REGISTERED_APPS = [
     {"id": "app01", "name": "监考分配", "description": "自动分配监考员，支持拖拽调整"},
