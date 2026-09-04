@@ -1,6 +1,9 @@
 services:
   backend:
+    # 从 GitHub Container Registry 拉取预构建镜像（默认）
     image: ghcr.io/cmj4088/tao-backend:latest
+    # 本地构建：注释掉 image 行，取消注释 build 行
+    # build: .
     ports:
       - "8002:8002"
     volumes:

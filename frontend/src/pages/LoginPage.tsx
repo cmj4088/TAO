@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/authStore"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
 
@@ -13,6 +14,7 @@ const LoginPage: React.FC = () => {
   const { login, loading } = useAuthStore()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [rememberMe, setRememberMe] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -23,7 +25,7 @@ const LoginPage: React.FC = () => {
     }
     setSubmitting(true)
     try {
-      await login(email, password)
+      await login(email, password, rememberMe)
       toast.success("登录成功")
       navigate("/home")
     } catch (e: unknown) {
@@ -57,7 +59,7 @@ const LoginPage: React.FC = () => {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="admin@tao.local"
+                  placeholder="请输入邮箱"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10"
@@ -79,6 +81,17 @@ const LoginPage: React.FC = () => {
                   className="pl-10"
                 />
               </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="remember-me"
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(checked === true)}
+              />
+              <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer">
+                记住我
+              </Label>
             </div>
 
             <Button

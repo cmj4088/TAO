@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react"
-import { Plus, Trash2, Zap, Shield, Key } from "lucide-react"
+import { Plus, Trash2, Zap, Shield, Key, ArrowLeft } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "@/stores/authStore"
 import client from "@/api/client"
 import { Button } from "@/components/ui/button"
@@ -46,9 +47,12 @@ interface UserItem {
 }
 
 const AdminPage: React.FC = () => {
+  const navigate = useNavigate()
   const { user } = useAuthStore()
   const [users, setUsers] = useState<UserItem[]>([])
   const [loading, setLoading] = useState(false)
+  // 当前选中用户（用于编辑其 LLM 配置）
+  const [selectedUser, setSelectedUser] = useState<UserItem | null>(null)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [createEmail, setCreateEmail] = useState("")
   const [createPassword, setCreatePassword] = useState("")
@@ -82,9 +86,11 @@ const AdminPage: React.FC = () => {
     }
   }
 
-  const loadLlmConfig = async () => {
+  const loadLlmConfig = async (userId?: string) => {
     try {
-      const res = await client.get("/api/auth/llm-config")
+      const targetId = userId || selectedUser?.id
+      const url = targetId ? `/api/auth/users/${targetId}/llm-config` : "/api/auth/llm-config"
+      const res = await client.get(url)
       const data = res.data.data
       setLlmUrl(data.url || "")
       setLlmKey(data.key || "")
@@ -164,7 +170,9 @@ const AdminPage: React.FC = () => {
   const handleSaveLlm = async () => {
     setLlmSaving(true)
     try {
-      await client.put("/api/auth/llm-config", {
+      const targetId = selectedUser?.id
+      const url = targetId ? `/api/auth/users/${targetId}/llm-config` : "/api/auth/llm-config"
+      await client.put(url, {
         url: llmUrl,
         key: editingKey ? newKey.trim() : "",
         model: llmModel,
@@ -174,7 +182,7 @@ const AdminPage: React.FC = () => {
         setEditingKey(false)
         setNewKey("")
       }
-      toast.success("大模型配置已保存")
+      toast.success(`${selectedUser ? selectedUser.display_name : "当前用户"} 的大模型配置已保存`)
       await loadLlmConfig()
     } catch {
       toast.error("保存失败")
@@ -192,6 +200,15 @@ const AdminPage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 py-4">
+      {/* 返回按钮 */}
+      <button
+        onClick={() => navigate("/home")}
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        返回
+      </button>
+
       <h1 className="text-2xl font-bold flex items-center gap-2">
         <Shield className="h-6 w-6" />
         管理后台
@@ -222,7 +239,14 @@ const AdminPage: React.FC = () => {
             </TableHeader>
             <TableBody>
               {users.map((u) => (
-                <TableRow key={u.id}>
+                <TableRow
+                  key={u.id}
+                  className={`cursor-pointer transition-colors ${selectedUser?.id === u.id ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-muted"}`}
+                  onClick={() => {
+                    setSelectedUser(u)
+                    loadLlmConfig(u.id)
+                  }}
+                >
                   <TableCell className="font-medium truncate max-w-0" title={u.email}>{u.email}</TableCell>
                   <TableCell className="truncate max-w-0" title={u.display_name}>{u.display_name}</TableCell>
                   <TableCell>
@@ -291,7 +315,16 @@ const AdminPage: React.FC = () => {
       {/* LLM 配置 */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">大模型配置（当前用户）</CardTitle>
+          <CardTitle className="text-lg">
+            大模型配置
+            {selectedUser ? (
+              <span className="text-muted-foreground font-normal">
+                （{selectedUser.display_name} — {selectedUser.email}）
+              </span>
+            ) : (
+              <span className="text-muted-foreground font-normal">（点击上方用户以编辑其配置）</span>
+            )}
+          </CardTitle>
           <CardDescription>配置 AI 审查使用的 API 地址和密钥</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

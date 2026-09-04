@@ -17,7 +17,7 @@ interface AuthState {
   isAuthenticated: boolean;
   loading: boolean;
 
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
   register: (email: string, password: string, displayName: string, code: string) => Promise<void>;
   sendVerifyCode: (email: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -27,15 +27,18 @@ interface AuthState {
   hasPermission: (permission: string) => boolean;
 }
 
-/** 从 localStorage 恢复 token */
-function loadTokens(): { access: string | null; refresh: string | null } {
+/** 从 localStorage 恢复 token，有 token 即视为已登录 */
+function loadTokens(): { access: string | null; refresh: string | null; isAuthenticated: boolean } {
   try {
+    const access = localStorage.getItem("access_token");
+    const refresh = localStorage.getItem("refresh_token");
     return {
-      access: localStorage.getItem("access_token"),
-      refresh: localStorage.getItem("refresh_token"),
+      access,
+      refresh,
+      isAuthenticated: !!(access && refresh),
     };
   } catch {
-    return { access: null, refresh: null };
+    return { access: null, refresh: null, isAuthenticated: false };
   }
 }
 
@@ -61,9 +64,9 @@ function clearTokens() {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  accessToken: loadTokens().access,
-  refreshToken: loadTokens().refresh,
-  isAuthenticated: false,
+  accessToken: (() => { try { return localStorage.getItem("access_token"); } catch { return null; } })(),
+  refreshToken: (() => { try { return localStorage.getItem("refresh_token"); } catch { return null; } })(),
+  isAuthenticated: (() => { try { return !!(localStorage.getItem("access_token") && localStorage.getItem("refresh_token")); } catch { return false; } })(),
   loading: false,
 
   setTokens: (access, refresh) => {
@@ -71,20 +74,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ accessToken: access, refreshToken: refresh, isAuthenticated: true });
   },
 
-  login: async (email, password) => {
+  login: async (email, password, rememberMe = false) => {
     set({ loading: true });
     try {
       const res = await client.post("/api/auth/login", { email, password });
       const { access_token, refresh_token } = res.data.data;
-      saveTokens(access_token, refresh_token);
+      // 只有勾选"记住我"才持久化到 localStorage
+      if (rememberMe) {
+        saveTokens(access_token, refresh_token);
+      }
       set({
         accessToken: access_token,
         refreshToken: refresh_token,
         isAuthenticated: true,
-        loading: false,
       });
       // 登录后加载用户信息
       await get().loadUser();
+      set({ loading: false });
     } catch (e: unknown) {
       set({ loading: false });
       const detail =
@@ -177,9 +183,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loadUser: async () => {
     try {
       const res = await client.get("/api/auth/me");
-      set({ user: res.data.data });
+      set({ user: res.data.data, isAuthenticated: true });
     } catch {
-      set({ user: null });
+      // 不在这里清 token — 401 拦截器已经处理了 token 刷新/清除
+      // 只标记用户信息加载失败，AuthGuard 会处理重定向
+      set({ user: null, isAuthenticated: false });
     }
   },
 

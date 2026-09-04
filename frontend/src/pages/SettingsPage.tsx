@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react"
-import { Sun, Moon, Zap, Eye, EyeOff, BarChart3, Lock, Info, Shield, Trash2, User as UserIcon, Mail, Clock } from "lucide-react"
+import { Sun, Moon, Zap, Eye, EyeOff, BarChart3, Lock, Info, Shield, Trash2, User as UserIcon, Mail, Clock, ArrowLeft } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import { useSettingsStore } from "@/stores/settingsStore"
 import { useThemeStore, type ThemeColor } from "@/stores/themeStore"
 import { useAuthStore } from "@/stores/authStore"
@@ -43,6 +44,7 @@ const COLOR_OPTIONS: { value: ThemeColor; label: string; color: string }[] = [
 ]
 
 const SettingsPage: React.FC = () => {
+  const navigate = useNavigate()
   const { app02AiConcurrency, setApp02AiConcurrency, loadApp02Settings, saveApp02Settings } = useSettingsStore()
   const { color, mode, setColor, setMode } = useThemeStore()
   const { user } = useAuthStore()
@@ -193,6 +195,15 @@ const SettingsPage: React.FC = () => {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 py-4">
+      {/* 返回按钮 */}
+      <button
+        onClick={() => navigate("/home")}
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        返回
+      </button>
+
       <h1 className="text-2xl font-bold">设置</h1>
 
       {/* 主题设置 */}

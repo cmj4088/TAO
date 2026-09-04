@@ -12,7 +12,7 @@ from collections import defaultdict
 from urllib.parse import quote
 
 import openpyxl
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 
 from app.schemas.app02 import (
@@ -23,18 +23,20 @@ from app.schemas.app02 import (
     ReviewResponse,
 )
 from app.services.doc_reviewer import classify_template
-from app.services.doc_converter import convert_doc_to_docx, convert_docx_to_pdf
+from app.services.doc_converter import convert_doc_to_docx, convert_docx_to_html
 from app.services.ai_reviewer_app02 import review_stream
 from app.config import ConfigManager
+
+from app.m1_auth.middleware import get_current_user
 
 router = APIRouter(prefix="/api/app02", tags=["app02"])
 
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "tao_app02")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-_session_files: dict[str, dict] = {}
-_session_results: list[FileReviewResult] = []
-_reviewed_file_ids: set[str] = set()
+_session_files: dict[str, dict[str, dict]] = {}       # user_id -> file_id -> info
+_session_results: dict[str, list[FileReviewResult]] = {}  # user_id -> results
+_reviewed_file_ids: dict[str, set[str]] = {}              # user_id -> set of file_ids
 
 _ai_tasks: dict[str, dict] = {}
 _stream_queues: dict[str, dict[str, asyncio.Queue]] = defaultdict(dict)
@@ -46,8 +48,15 @@ def get_status():
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_files(files: list[UploadFile] = File(...)):
+async def upload_files(
+    files: list[UploadFile] = File(...),
+    user: dict = Depends(get_current_user),
+):
     global _session_files
+
+    uid = user["id"]
+    if uid not in _session_files:
+        _session_files[uid] = {}
 
     infos: list[UploadedFileInfo] = []
 
@@ -69,7 +78,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
         is_doc = ext == ".doc"
         file_type = classify_template(f.filename)
 
-        _session_files[file_id] = {
+        _session_files[uid][file_id] = {
             "filename": f.filename,
             "filepath": filepath,
             "file_type": file_type,
@@ -89,31 +98,37 @@ async def upload_files(files: list[UploadFile] = File(...)):
 
 
 @router.post("/reset")
-def reset_session():
+def reset_session(user: dict = Depends(get_current_user)):
     global _session_files, _session_results, _reviewed_file_ids, _ai_tasks, _stream_queues
-    _session_files.clear()
-    _session_results.clear()
-    _reviewed_file_ids.clear()
+    uid = user["id"]
+    _session_files.pop(uid, None)
+    _session_results.pop(uid, None)
+    _reviewed_file_ids.pop(uid, None)
     _ai_tasks.clear()
     _stream_queues.clear()
     return {"status": "ok"}
 
 
 @router.post("/review", response_model=ReviewResponse)
-def run_review():
+def run_review(user: dict = Depends(get_current_user)):
     global _session_files, _session_results, _reviewed_file_ids
 
-    if not _session_files:
+    uid = user["id"]
+    user_files = _session_files.get(uid, {})
+    if not user_files:
         raise HTTPException(400, "请先上传文件")
 
-    new_file_ids = [fid for fid in _session_files if fid not in _reviewed_file_ids]
+    if uid not in _reviewed_file_ids:
+        _reviewed_file_ids[uid] = set()
+
+    new_file_ids = [fid for fid in user_files if fid not in _reviewed_file_ids[uid]]
     if not new_file_ids:
         raise HTTPException(400, "所有文件已审查完毕，没有新增文件需要审查")
 
     new_results: list[FileReviewResult] = []
 
     for file_id in new_file_ids:
-        info = _session_files[file_id]
+        info = user_files[file_id]
         filepath = info["filepath"]
 
         if info["is_doc"]:
@@ -138,7 +153,7 @@ def run_review():
                     )],
                 )
                 new_results.append(result)
-                _reviewed_file_ids.add(file_id)
+                _reviewed_file_ids[uid].add(file_id)
                 continue
 
         result = FileReviewResult(
@@ -151,61 +166,63 @@ def run_review():
             issues=[],
         )
         new_results.append(result)
-        _reviewed_file_ids.add(file_id)
+        _reviewed_file_ids[uid].add(file_id)
 
-    _session_results = new_results
+    _session_results[uid] = new_results
 
     ai_task_id = str(uuid.uuid4())
     _ai_tasks[ai_task_id] = {"status": "starting", "total": len(new_file_ids), "completed": 0, "files": [], "findings": [], "error": None}
 
-    mode = "single" if len(_session_results) == 1 else "batch"
-    summary = f"共 {len(_session_results)} 个文件，AI 审查已启动，请等待分析完成"
+    mode = "single" if len(_session_results[uid]) == 1 else "batch"
+    summary = f"共 {len(_session_results[uid])} 个文件，AI 审查已启动，请等待分析完成"
 
     t = threading.Thread(
         target=_run_ai_review_task,
-        args=(ai_task_id, new_file_ids),
+        args=(ai_task_id, new_file_ids, user["id"]),
         daemon=True,
     )
     t.start()
 
-    return ReviewResponse(mode=mode, results=_session_results, summary=summary, ai_task_id=ai_task_id)
+    return ReviewResponse(mode=mode, results=_session_results[uid], summary=summary, ai_task_id=ai_task_id)
 
 
 @router.get("/preview/{file_id}")
-def preview_file(file_id: str):
+def preview_file(
+    file_id: str,
+    user: dict = Depends(get_current_user),
+):
     global _session_files
 
-    if file_id not in _session_files:
+    uid = user["id"]
+    user_files = _session_files.get(uid, {})
+
+    if file_id not in user_files:
         raise HTTPException(404, "文件不存在")
 
-    info = _session_files[file_id]
+    info = user_files[file_id]
     src_path = info.get("converted_path") or info["filepath"]
 
-    pdf_path = convert_docx_to_pdf(src_path)
-    if not pdf_path:
-        raise HTTPException(500, "无法转换为 PDF，请确保安装了 LibreOffice 或 Microsoft Word")
+    # 纯 Python 将 docx 转为 HTML，不依赖 LibreOffice/Word，浏览器原生渲染中文
+    html_content = convert_docx_to_html(src_path)
+    if html_content is None:
+        raise HTTPException(500, "无法解析文档内容，请确保文件为有效的 .docx 格式")
 
-    def iterfile():
-        with open(pdf_path, "rb") as f:
-            yield from f
-        try:
-            os.remove(pdf_path)
-        except Exception:
-            pass
-
-    encoded_filename = quote(f"{info['filename']}.pdf")
+    encoded_filename = quote(f"{info['filename']}.html")
     return StreamingResponse(
-        iterfile(),
-        media_type="application/pdf",
+        iter([html_content.encode("utf-8")]),
+        media_type="text/html; charset=utf-8",
         headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"},
     )
 
 
 @router.get("/export")
-def export_excel():
+def export_excel(user: dict = Depends(get_current_user)):
     global _session_results
 
-    if not _session_results:
+    uid = user["id"]
+    user_results = _session_results.get(uid, [])
+
+    if not user_results:
         raise HTTPException(400, "请先执行审查")
 
     wb = openpyxl.Workbook()
@@ -217,7 +234,7 @@ def export_excel():
         ws.cell(row=1, column=c, value=h)
 
     row_idx = 2
-    for result in _session_results:
+    for result in user_results:
         if result.issues:
             for issue in result.issues:
                 ws.cell(row=row_idx, column=1, value=result.filename)
@@ -250,26 +267,28 @@ def export_excel():
 
 # ===== AI 审查（异步并发流式） =====
 
-def _run_ai_review_task(task_id: str, file_ids: list[str]):
+def _run_ai_review_task(task_id: str, file_ids: list[str], user_id: str | None = None):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(_run_ai_review_task_async(task_id, file_ids))
+        loop.run_until_complete(_run_ai_review_task_async(task_id, file_ids, user_id))
     except Exception:
         traceback.print_exc()
     finally:
         loop.close()
 
 
-async def _run_ai_review_task_async(task_id: str, file_ids: list[str]):
+async def _run_ai_review_task_async(task_id: str, file_ids: list[str], user_id: str | None = None):
     global _session_files, _ai_tasks
+
+    user_files = _session_files.get(user_id, {}) if user_id else {}
 
     concurrency = int(ConfigManager.get("app02_ai_concurrency", "1"))
     semaphore = asyncio.Semaphore(max(1, concurrency))
 
     all_files = []
     for fid in file_ids:
-        info = _session_files.get(fid)
+        info = user_files.get(fid)
         if info:
             all_files.append({
                 "file_id": fid,
@@ -300,7 +319,7 @@ async def _run_ai_review_task_async(task_id: str, file_ids: list[str]):
 
     async def review_one_file(fe: dict):
         fid = fe["file_id"]
-        info = _session_files.get(fid)
+        info = user_files.get(fid)
         if not info:
             fe["status"] = "done"
             _ai_tasks[task_id]["completed"] += 1
@@ -319,7 +338,7 @@ async def _run_ai_review_task_async(task_id: str, file_ids: list[str]):
 
         try:
             async with semaphore:
-                async for event_type, data in review_stream(filepath, info["filename"]):
+                async for event_type, data in review_stream(filepath, info["filename"], user_id=user_id):
                     if event_type == "reasoning":
                         await file_queues[fid].put(("reasoning", {"file_id": fid, "content": data}))
                     elif event_type == "token":
@@ -360,7 +379,10 @@ async def _run_ai_review_task_async(task_id: str, file_ids: list[str]):
 
 
 @router.get("/ai-review/stream/{task_id}")
-async def ai_review_stream_endpoint(task_id: str):
+async def ai_review_stream_endpoint(
+    task_id: str,
+    user: dict = Depends(get_current_user),
+):
     if task_id not in _stream_queues and task_id not in _ai_tasks:
         raise HTTPException(404, "任务不存在或已过期")
 
@@ -439,20 +461,22 @@ async def ai_review_stream_endpoint(task_id: str):
 
 
 @router.get("/ai-review/status")
-def ai_review_status():
+def ai_review_status(user: dict = Depends(get_current_user)):
     api_key = ConfigManager.get("llm_key", "")
     return {"configured": bool(api_key)}
 
 
 @router.post("/ai-review/start")
-def start_ai_review():
+def start_ai_review(user: dict = Depends(get_current_user)):
     global _session_files
-    if not _session_files:
+    uid = user["id"]
+    user_files = _session_files.get(uid, {})
+    if not user_files:
         raise HTTPException(400, "请先上传文件并执行审查")
 
     task_id = str(uuid.uuid4())
-    all_file_ids = list(_session_files.keys())
-    t = threading.Thread(target=_run_ai_review_task, args=(task_id, all_file_ids), daemon=True)
+    all_file_ids = list(user_files.keys())
+    t = threading.Thread(target=_run_ai_review_task, args=(task_id, all_file_ids, user["id"]), daemon=True)
     t.start()
 
     return {"task_id": task_id, "status": "running"}

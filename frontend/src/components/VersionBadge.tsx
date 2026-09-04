@@ -1,42 +1,46 @@
-import React, { useEffect, useState } from "react";
-import { Tag, Tooltip } from "antd";
-import { DownloadOutlined } from "@ant-design/icons";
-import client from "@/api/client";
+import React, { useEffect, useState } from "react"
+import { Download } from "lucide-react"
+import client from "@/api/client"
+import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
-/** 获取本地版本号：优先从 Electron API 读取，回退到硬编码 */
 function getLocalVersion(): string {
-  const api = (window as any).electronAPI;
-  return api?.version || "0.1.3";
+  const api = (window as any).electronAPI
+  return api?.version || "0.1.3"
 }
 
 const VersionBadge: React.FC = () => {
-  const [hasUpdate, setHasUpdate] = useState(false);
+  const [hasUpdate, setHasUpdate] = useState(false)
 
   useEffect(() => {
     const check = async () => {
       try {
-        const res = await client.get("/api/version");
-        const remote = res.data.version;
-        const local = getLocalVersion();
+        const res = await client.get("/api/version")
+        const remote = res.data.version
+        const local = getLocalVersion()
         if (remote && remote !== local) {
-          setHasUpdate(true);
+          setHasUpdate(true)
         }
       } catch {
         // 后端未启动时静默忽略
       }
-    };
-    check();
-  }, []);
+    }
+    check()
+  }, [])
 
-  if (!hasUpdate) return null;
+  if (!hasUpdate) return null
 
   return (
-    <Tooltip title="有新版本可下载">
-      <Tag color="orange" icon={<DownloadOutlined />} style={{ cursor: "pointer" }}>
-        新版本
-      </Tag>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="secondary" className="cursor-pointer gap-1 bg-amber-500/10 text-amber-500 border-amber-500/30">
+          <Download className="h-3 w-3" />
+          新版本
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>有新版本可下载</TooltipContent>
     </Tooltip>
-  );
-};
+  )
+}
 
-export default VersionBadge;
+export default VersionBadge

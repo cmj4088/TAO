@@ -1,0 +1,133 @@
+/* ===== 字体导入 ===== */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+/* ===== Tailwind 指令 ===== */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== 暗色主题（默认）===== */
+:root {
+  --background: 0 0% 7%;
+  --foreground: 0 0% 90%;
+  --card: 0 0% 11%;
+  --card-foreground: 0 0% 90%;
+  --popover: 0 0% 11%;
+  --popover-foreground: 0 0% 90%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 15%;
+  --secondary-foreground: 0 0% 85%;
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 60%;
+  --accent: 0 0% 15%;
+  --accent-foreground: 0 0% 85%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 20%;
+  --input: 0 0% 15%;
+  --ring: 221 83% 53%;
+  --radius: 0.5rem;
+}
+
+/* ===== 亮色主题 ===== */
+.light {
+  --background: 0 0% 96%;
+  --foreground: 0 0% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 10%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 93%;
+  --secondary-foreground: 0 0% 15%;
+  --muted: 0 0% 93%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 0 0% 93%;
+  --accent-foreground: 0 0% 15%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 85%;
+  --input: 0 0% 93%;
+  --ring: 221 83% 53%;
+}
+
+/* ===== 预设色系 ===== */
+/* 经典蓝（默认） */
+:root {
+  --primary: 221 83% 53%;
+  --ring: 221 83% 53%;
+}
+
+/* 暗夜紫 */
+[data-theme="purple"] {
+  --primary: 262 83% 58%;
+  --ring: 262 83% 58%;
+}
+
+/* 翡翠青 */
+[data-theme="cyan"] {
+  --primary: 187 85% 43%;
+  --ring: 187 85% 43%;
+}
+
+/* 琥珀橙 */
+[data-theme="amber"] {
+  --primary: 25 95% 53%;
+  --ring: 25 95% 53%;
+}
+
+/* 玫瑰粉 */
+[data-theme="rose"] {
+  --primary: 346 87% 62%;
+  --ring: 346 87% 62%;
+}
+
+/* ===== 全局基础样式 ===== */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* 自定义滚动条 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+/* ===== 工具类 ===== */
+@layer utilities {
+  .glass {
+    background: hsl(var(--card) / 0.8);
+    backdrop-filter: blur(16px);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  .glass-light {
+    background: hsl(var(--card) / 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border) / 0.3);
+  }
+}

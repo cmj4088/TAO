@@ -19,3 +19,10 @@ frontend/dist/
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# 本地构建产物与副本（2026-09-04 部署时补充）
+前端/
+jiaowuban-backend/
+jiaowuban-backend.zip
+*.zip
+backend/stress_report.json

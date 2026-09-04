@@ -12,9 +12,27 @@ ARK_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
 MODEL_ID = "deepseek-v4-pro-260425"
 
 
-def _get_llm_config(api_key: str | None = None, model: str | None = None, url: str | None = None) -> tuple[str, str, str]:
-    """读取 LLM 配置：优先使用传入参数 → ConfigManager 数据库配置 → 默认值"""
+def _get_llm_config(api_key: str | None = None, model: str | None = None, url: str | None = None, user_id: str | None = None) -> tuple[str, str, str]:
+    """读取 LLM 配置，优先级：传入参数 > 用户级配置（user_llm_configs）> 全局配置 > 默认值"""
     from app.config import ConfigManager
+
+    # 如果提供了 user_id，优先从用户级配置读取
+    if user_id:
+        from app.database import SessionLocal
+        from app.m1_auth.auth_service import AuthService
+        db = SessionLocal()
+        try:
+            service = AuthService(db)
+            user_url, user_key, user_model = service.get_llm_config_full(user_id)
+            if user_url and user_key:
+                final_url = url or user_url or ARK_URL
+                final_key = api_key or user_key
+                final_model = model or user_model or MODEL_ID
+                return final_url, final_key, final_model
+        finally:
+            db.close()
+
+    # 回退到全局配置
     final_url = url or ConfigManager.get("llm_url", "") or ARK_URL
     final_key = api_key or ConfigManager.get("llm_key", "")
     final_model = model or ConfigManager.get("llm_model", "") or MODEL_ID
@@ -760,8 +778,8 @@ async def review(filepath: str, filename: str, api_key: str | None = None) -> tu
     return findings, extracted_info, content
 
 
-async def _call_api_stream(api_key: str, prompt: str):
-    url, key, model = _get_llm_config(api_key=api_key)
+async def _call_api_stream(api_key: str, prompt: str, user_id: str | None = None):
+    url, key, model = _get_llm_config(api_key=api_key, user_id=user_id)
     body = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -791,7 +809,8 @@ async def _call_api_stream(api_key: str, prompt: str):
                 try:
                     chunk = json.loads(data_str)
                     delta = chunk.get("choices", [{}])[0].get("delta", {})
-                    reasoning = delta.get("reasoning_content", "")
+                    # 多模型思考字段兼容：DeepSeek/豆包/通义千问→reasoning_content，Claude→thinking，其他→reasoning
+                    reasoning = delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "")
                     content = delta.get("content", "")
                     if reasoning:
                         yield ("reasoning", reasoning)
@@ -801,19 +820,20 @@ async def _call_api_stream(api_key: str, prompt: str):
                     continue
 
 
-async def review_stream(filepath: str, filename: str, api_key: str | None = None):
-    _, key, _ = _get_llm_config(api_key=api_key)
+async def review_stream(filepath: str, filename: str, api_key: str | None = None, user_id: str | None = None):
+    _, key, _ = _get_llm_config(api_key=api_key, user_id=user_id)
     doc_text = extract_doc_text(filepath)
     prompt = build_prompt(doc_text, filename)
 
     full_text_parts: list[str] = []
     try:
-        async for event_type, token in _call_api_stream(key, prompt):
+        async for event_type, token in _call_api_stream(key, prompt, user_id=user_id):
+            # 统一所有流式内容为思考过程：reasoning_content 和 content 都作为 reasoning 推送
             if event_type == "reasoning":
                 yield ("reasoning", token)
             elif event_type == "token":
                 full_text_parts.append(token)
-                yield ("token", token)
+                yield ("reasoning", token)  # 统一为思考过程，前端只显示"思考中"
     except Exception as e:
         yield ("error", str(e))
         return

@@ -1,32 +1,19 @@
-import React from "react";
-import { Modal, Card, Row, Col, Typography, Tag, theme } from "antd";
-import {
-  ThunderboltOutlined,
-  ApiOutlined,
-  RobotOutlined,
-  CloudOutlined,
-  StarOutlined,
-  FireOutlined,
-  RocketOutlined,
-  ExperimentOutlined,
-  DashboardOutlined,
-  GlobalOutlined,
-  ToolOutlined,
-  EditOutlined,
-} from "@ant-design/icons";
-
-const { Text, Title } = Typography;
+import React from "react"
+import { Zap, Cpu, Bot, Cloud, Star, Flame, Rocket, Beaker, LayoutDashboard, Globe, Wrench, Pencil } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
 /** AI 供应商信息 */
 export interface ProviderInfo {
-  id: string;
-  name: string;
-  apiUrl: string;
-  defaultModel: string;
-  description: string;
-  /** 图标颜色 */
-  color: string;
-  icon: React.ReactNode;
+  id: string
+  name: string
+  apiUrl: string
+  defaultModel: string
+  description: string
+  color: string
+  icon: React.ReactNode
 }
 
 /** 市场流行的 AI 供应商，全部支持 OpenAI 兼容 API 格式 */
@@ -38,7 +25,7 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "deepseek-chat",
     description: "国产顶尖推理模型，性价比极高",
     color: "#4F46E5",
-    icon: <ThunderboltOutlined />,
+    icon: <Zap className="h-5 w-5" />,
   },
   {
     id: "volcano",
@@ -47,7 +34,7 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "deepseek-v4-pro-260425",
     description: "字节跳动旗下，支持多种模型",
     color: "#FE5C36",
-    icon: <FireOutlined />,
+    icon: <Flame className="h-5 w-5" />,
   },
   {
     id: "openai",
@@ -56,7 +43,7 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "gpt-4o",
     description: "全球领先的 AI 模型",
     color: "#10A37F",
-    icon: <RobotOutlined />,
+    icon: <Bot className="h-5 w-5" />,
   },
   {
     id: "alibaba",
@@ -65,7 +52,7 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "qwen-max",
     description: "通义千问系列模型",
     color: "#FF6A00",
-    icon: <CloudOutlined />,
+    icon: <Cloud className="h-5 w-5" />,
   },
   {
     id: "zhipu",
@@ -74,7 +61,7 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "glm-4-plus",
     description: "清华系，GLM 系列模型",
     color: "#1677FF",
-    icon: <StarOutlined />,
+    icon: <Star className="h-5 w-5" />,
   },
   {
     id: "baidu",
@@ -83,7 +70,7 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "ernie-4.0-turbo",
     description: "文心一言系列模型",
     color: "#2468E5",
-    icon: <DashboardOutlined />,
+    icon: <LayoutDashboard className="h-5 w-5" />,
   },
   {
     id: "moonshot",
@@ -92,7 +79,7 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "moonshot-v1-8k",
     description: "超长上下文，适合文档处理",
     color: "#8B5CF6",
-    icon: <RocketOutlined />,
+    icon: <Rocket className="h-5 w-5" />,
   },
   {
     id: "siliconflow",
@@ -101,16 +88,16 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "deepseek-ai/DeepSeek-V3",
     description: "硅基流动，聚合多种开源模型",
     color: "#6366F1",
-    icon: <ExperimentOutlined />,
+    icon: <Beaker className="h-5 w-5" />,
   },
   {
     id: "tencent",
     name: "腾讯混元",
-    apiUrl: "https://api.hunyuan.cloud.tencent.com/v1/chat/completions",
-    defaultModel: "hunyuan-pro",
+    apiUrl: "https://api.lkeap.cloud.tencent.com/v1/chat/completions",
+    defaultModel: "hunyuan-T1",
     description: "腾讯自研大模型",
     color: "#00A4FF",
-    icon: <GlobalOutlined />,
+    icon: <Globe className="h-5 w-5" />,
   },
   {
     id: "groq",
@@ -119,7 +106,7 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "llama-3.1-70b-versatile",
     description: "超快推理速度，免费额度",
     color: "#F97316",
-    icon: <ApiOutlined />,
+    icon: <Cpu className="h-5 w-5" />,
   },
   {
     id: "together",
@@ -128,109 +115,112 @@ const PROVIDERS: ProviderInfo[] = [
     defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
     description: "开源模型聚合平台",
     color: "#0FA5E9",
-    icon: <ToolOutlined />,
+    icon: <Wrench className="h-5 w-5" />,
   },
-];
+]
 
 interface ProviderQuickSelectProps {
-  open: boolean;
-  onClose: () => void;
-  /** 选中供应商后的回调：自动填入 URL、模型名，并切换到 key 编辑状态 */
-  onSelect: (provider: ProviderInfo) => void;
+  open: boolean
+  onClose: () => void
+  onSelect: (provider: ProviderInfo) => void
 }
 
-const ProviderQuickSelect: React.FC<ProviderQuickSelectProps> = ({
-  open,
-  onClose,
-  onSelect,
-}) => {
-  const { token } = theme.useToken();
-
+const ProviderQuickSelect: React.FC<ProviderQuickSelectProps> = ({ open, onClose, onSelect }) => {
   const handleSelect = (provider: ProviderInfo) => {
-    onSelect(provider);
-    onClose();
-  };
+    onSelect(provider)
+    onClose()
+  }
 
   return (
-    <Modal
-      title={
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <ThunderboltOutlined style={{ color: token.colorPrimary }} />
-          <span>快捷配置 — 选择 AI 供应商</span>
-        </div>
-      }
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      width={720}
-      styles={{ body: { maxHeight: "60vh", overflow: "auto", padding: "16px 24px" } }}
-    >
-      <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
-        选择一个供应商，系统将自动填入 API 地址和模型名称，您只需输入 API Key 即可。
-      </Text>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5 text-primary" />
+            快捷配置 — 选择 AI 供应商
+          </DialogTitle>
+          <DialogDescription>
+            选择一个供应商，系统将自动填入 API 地址和模型名称，您只需输入 API Key 即可。
+          </DialogDescription>
+        </DialogHeader>
 
-      <Row gutter={[12, 12]}>
-        {PROVIDERS.map((p) => (
-          <Col xs={24} sm={12} key={p.id}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {PROVIDERS.map((p) => (
             <Card
-              hoverable
-              size="small"
+              key={p.id}
+              className="cursor-pointer hover:border-primary/50 transition-colors"
               onClick={() => handleSelect(p)}
-              style={{
-                borderColor: token.colorBorderSecondary,
-                cursor: "pointer",
-                height: "100%",
-              }}
-              bodyStyle={{ padding: "12px 16px" }}
             >
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <CardContent className="p-4 flex items-start gap-3">
                 <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 8,
-                    background: p.color,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#fff",
-                    fontSize: 18,
-                    flexShrink: 0,
-                  }}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white shrink-0"
+                  style={{ backgroundColor: p.color }}
                 >
                   {p.icon}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                    <Text strong style={{ fontSize: 14 }}>{p.name}</Text>
-                  </div>
-                  <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
-                    {p.description}
-                  </Text>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    <Tag style={{ fontSize: 11, margin: 0 }} color="blue">
-                      {p.defaultModel}
-                    </Tag>
-                  </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">{p.name}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5 mb-1.5">{p.description}</div>
+                  <Badge variant="secondary" className="text-xs">
+                    {p.defaultModel}
+                  </Badge>
                 </div>
-              </div>
+              </CardContent>
             </Card>
-          </Col>
-        ))}
-      </Row>
+          ))}
+        </div>
 
-      {/* 自定义按钮 */}
-      <div style={{ marginTop: 16, textAlign: "center" }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+        <div className="text-center text-sm text-muted-foreground">
           没找到你的供应商？
-          <a onClick={onClose} style={{ marginLeft: 4 }}>
-            手动填写 API 地址和模型 <EditOutlined />
-          </a>
-        </Text>
-      </div>
-    </Modal>
-  );
-};
+          <button onClick={onClose} className="ml-1 text-primary hover:underline inline-flex items-center gap-1">
+            手动填写 API 地址和模型 <Pencil className="h-3 w-3" />
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
-export { PROVIDERS };
-export default ProviderQuickSelect;
+export { PROVIDERS }
+export default ProviderQuickSelect
+
+/** 根据 API URL 匹配供应商（前缀匹配），未匹配返回 null */
+export function matchProvider(url: string): ProviderInfo | null {
+  if (!url) return null
+  const normalized = url.trim().toLowerCase()
+  const sorted = [...PROVIDERS].sort((a, b) => b.apiUrl.length - a.apiUrl.length)
+  for (const p of sorted) {
+    if (normalized.startsWith(p.apiUrl.toLowerCase())) {
+      return p
+    }
+  }
+  return null
+}
+
+/** 供应商匹配指示器：在 URL 输入框下方显示当前匹配的供应商 */
+export const ProviderMatchIndicator: React.FC<{ url: string }> = ({ url }) => {
+  const provider = matchProvider(url)
+  if (!provider) return null
+  return (
+    <div
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs mt-1"
+      style={{
+        backgroundColor: `${provider.color}15`,
+        borderColor: `${provider.color}40`,
+        borderWidth: 1,
+        borderStyle: "solid",
+      }}
+    >
+      <span
+        className="inline-flex items-center justify-center w-5 h-5 rounded text-white"
+        style={{ backgroundColor: provider.color }}
+      >
+        {provider.icon}
+      </span>
+      <span className="font-medium" style={{ color: provider.color }}>
+        {provider.name}
+      </span>
+      <span className="text-muted-foreground">已识别</span>
+    </div>
+  )
+}

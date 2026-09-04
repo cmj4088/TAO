@@ -246,3 +246,34 @@ def reset_user_password(
         return {"data": {"message": "密码已重置，用户需重新登录"}, "error": None}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/users/{user_id}/llm-config")
+def get_user_llm_config(
+    user_id: str,
+    user: dict = Depends(require_permission("user:read")),
+    db: Session = Depends(get_db),
+):
+    """Admin 查看指定用户的 LLM 配置"""
+    service = AuthService(db)
+    config = service.get_llm_config(user_id)
+    return {"data": config, "error": None}
+
+
+@router.put("/users/{user_id}/llm-config")
+def update_user_llm_config(
+    user_id: str,
+    request: LLMConfigRequest,
+    user: dict = Depends(require_permission("user:write")),
+    db: Session = Depends(get_db),
+):
+    """Admin 更新指定用户的 LLM 配置"""
+    service = AuthService(db)
+    service.update_llm_config(
+        user_id=user_id,
+        url=request.url,
+        key=request.key,
+        model=request.model,
+        key_changed=request.key_changed,
+    )
+    return {"data": {"message": "LLM 配置已保存"}, "error": None}
