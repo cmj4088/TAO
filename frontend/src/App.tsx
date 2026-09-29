@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from "react"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { useAuthStore } from "@/stores/authStore"
 import ThemeProvider from "@/components/ThemeProvider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -20,6 +21,12 @@ const Loading = () => (
     加载中...
   </div>
 )
+
+// 根路径重定向：已登录（含"记住我"恢复的会话）直接进首页，否则去登录页
+const RootRedirect: React.FC = () => {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  return <Navigate to={isAuthenticated ? "/home" : "/login"} replace />
+}
 
 const App: React.FC = () => {
   return (
@@ -75,6 +82,9 @@ const App: React.FC = () => {
                 </AuthGuard>
               }
             />
+
+            {/* 根路径：按登录态分流（修复"记住我"后重启仍落在登录页的问题） */}
+            <Route path="/" element={<RootRedirect />} />
 
             {/* 默认重定向到登录 */}
             <Route path="*" element={<Navigate to="/login" replace />} />

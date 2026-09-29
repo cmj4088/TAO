@@ -14,10 +14,22 @@ const HomePage: React.FC = () => {
   const { setActiveApp } = useAppStore()
   const { user } = useAuthStore()
   const [version, setVersion] = useState("")
+  // 当前配置的大模型名（用户级 LLM 配置）
+  const [llmModel, setLlmModel] = useState("")
+  // 当前用户的 AI 用量（累计）
+  const [usage, setUsage] = useState<{ calls: number; totalTokens: number } | null>(null)
 
   useEffect(() => {
     client.get("/api/version").then(res => {
       setVersion(res.data.version)
+    }).catch(() => {})
+    // 拉取模型名与用量统计，失败时静默保持占位文案
+    client.get("/api/auth/llm-config").then(res => {
+      setLlmModel(res.data?.data?.model || "")
+    }).catch(() => {})
+    client.get("/api/stats/ai-usage").then(res => {
+      const me = res.data?.data?.me
+      if (me) setUsage({ calls: me.calls, totalTokens: me.total_tokens })
     }).catch(() => {})
   }, [])
 
@@ -109,18 +121,29 @@ const HomePage: React.FC = () => {
             </div>
             <div>
               <p className="text-sm font-medium">AI 驱动</p>
-              <p className="text-xs text-muted-foreground">DeepSeek V4 大模型</p>
+              {/* 实时显示当前配置的大模型名，未配置时引导去设置页 */}
+              <p className="text-xs text-muted-foreground truncate max-w-[180px]" title={llmModel}>
+                {llmModel ? `${llmModel} 大模型` : "未配置，请前往设置"}
+              </p>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card/50">
+        <Card
+          className="bg-card/50 cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => navigate("/settings#stats")}
+        >
           <CardContent className="flex items-center gap-4 py-4">
             <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
               <BarChart3 className="h-5 w-5 text-emerald-500" />
             </div>
             <div>
               <p className="text-sm font-medium">数据统计</p>
-              <p className="text-xs text-muted-foreground">前往设置页查看</p>
+              {/* 显示自己的累计 AI 用量，点击跳转设置页 */}
+              <p className="text-xs text-muted-foreground">
+                {usage
+                  ? `累计 ${usage.calls} 次调用 · ${usage.totalTokens} tokens`
+                  : "前往设置页查看"}
+              </p>
             </div>
           </CardContent>
         </Card>

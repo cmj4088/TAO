@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getAccessToken, getRefreshToken, saveTokens, clearTokens } from "@/api/tokenStore";
 
 // VITE_API_BASE 为空字符串时表示同源请求（nginx 反代 /api），因此用 ?? 而非 ||
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8002";
@@ -9,9 +10,9 @@ const client = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// 请求拦截器：自动附加 Bearer token
+// 请求拦截器：自动附加 Bearer token（经由统一存取层，兼容"未勾记住我"的纯内存会话）
 client.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token");
+  const token = getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -65,12 +66,11 @@ client.interceptors.response.use(
     originalRequest._retry = true;
     isRefreshing = true;
 
-    const refreshToken = localStorage.getItem("refresh_token");
+    const refreshToken = getRefreshToken();
     if (!refreshToken) {
       isRefreshing = false;
       // 未登录，清除残留 token，让 AuthGuard 处理重定向
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
+      clearTokens();
       return Promise.reject(error);
     }
 
@@ -79,15 +79,14 @@ client.interceptors.response.use(
         refresh_token: refreshToken,
       });
       const { access_token, refresh_token } = res.data.data;
-      localStorage.setItem("access_token", access_token);
-      localStorage.setItem("refresh_token", refresh_token);
+      // 经统一存取层保存：是否写 localStorage 由"记住我"选择决定
+      saveTokens(access_token, refresh_token);
       processQueue(null, access_token);
       originalRequest.headers.Authorization = `Bearer ${access_token}`;
       return client(originalRequest);
     } catch {
       processQueue(error, null);
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
+      clearTokens();
       return Promise.reject(error);
     } finally {
       isRefreshing = false;

@@ -1,40 +1,8 @@
 {
   "name": "jiaowuban-agent",
-  "version": "2.0.2",
+  "version": "2.0.1",
   "description": "教务办·智能体",
   "main": "electron-main/main.cjs",
-  "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "dev:vite": "vite",
-    "dev:electron": "electron .",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "package": "npm run build && electron-builder"
-  },
-  "build": {
-    "appId": "com.jiaowuban.agent",
-    "productName": "教务办智能体",
-    "directories": {
-      "output": "../前端"
-    },
-    "files": [
-      "dist/**/*",
-      "electron-main/**/*",
-      "package.json"
-    ],
-    "win": {
-      "target": "nsis"
-    },
-    "nsis": {
-      "oneClick": true,
-      "allowToChangeInstallationDirectory": false
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "cmj4088",
-      "repo": "TAO"
-    }
-  },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
@@ -75,21 +43,5 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
     "zustand": "^4.5.5"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.5",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "autoprefixer": "^10.5.4",
-    "concurrently": "^8.2.2",
-    "cross-env": "^7.0.3",
-    "electron": "^31.7.7",
-    "electron-builder": "^26.15.3",
-    "postcss": "^8.5.25",
-    "tailwindcss": "^3.4.19",
-    "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5.5.4",
-    "vite": "^5.4.3",
-    "wait-on": "^7.2.0"
   }
 }

@@ -1,5 +1,13 @@
 import { create } from "zustand";
 import client from "@/api/client";
+import {
+  getAccessToken,
+  getRefreshToken,
+  hasTokens,
+  saveTokens,
+  clearTokens,
+  setRememberMe,
+} from "@/api/tokenStore";
 
 interface UserInfo {
   id: string;
@@ -27,46 +35,11 @@ interface AuthState {
   hasPermission: (permission: string) => boolean;
 }
 
-/** 从 localStorage 恢复 token，有 token 即视为已登录 */
-function loadTokens(): { access: string | null; refresh: string | null; isAuthenticated: boolean } {
-  try {
-    const access = localStorage.getItem("access_token");
-    const refresh = localStorage.getItem("refresh_token");
-    return {
-      access,
-      refresh,
-      isAuthenticated: !!(access && refresh),
-    };
-  } catch {
-    return { access: null, refresh: null, isAuthenticated: false };
-  }
-}
-
-/** 保存 token 到 localStorage */
-function saveTokens(access: string, refresh: string) {
-  try {
-    localStorage.setItem("access_token", access);
-    localStorage.setItem("refresh_token", refresh);
-  } catch {
-    // localStorage 不可用
-  }
-}
-
-/** 清除 localStorage 中的 token */
-function clearTokens() {
-  try {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-  } catch {
-    // localStorage 不可用
-  }
-}
-
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  accessToken: (() => { try { return localStorage.getItem("access_token"); } catch { return null; } })(),
-  refreshToken: (() => { try { return localStorage.getItem("refresh_token"); } catch { return null; } })(),
-  isAuthenticated: (() => { try { return !!(localStorage.getItem("access_token") && localStorage.getItem("refresh_token")); } catch { return false; } })(),
+  accessToken: getAccessToken(),
+  refreshToken: getRefreshToken(),
+  isAuthenticated: hasTokens(),
   loading: false,
 
   setTokens: (access, refresh) => {
@@ -79,10 +52,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await client.post("/api/auth/login", { email, password });
       const { access_token, refresh_token } = res.data.data;
-      // 只有勾选"记住我"才持久化到 localStorage
-      if (rememberMe) {
-        saveTokens(access_token, refresh_token);
-      }
+      // 记录"记住我"选择；tokenStore 只在勾选时才持久化到 localStorage
+      setRememberMe(rememberMe);
+      saveTokens(access_token, refresh_token, rememberMe);
       set({
         accessToken: access_token,
         refreshToken: refresh_token,
@@ -110,7 +82,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         code,
       });
       const { access_token, refresh_token } = res.data.data;
-      saveTokens(access_token, refresh_token);
+      // 注册即视为长期会话（保持既有行为：持久化）
+      setRememberMe(true);
+      saveTokens(access_token, refresh_token, true);
       set({
         accessToken: access_token,
         refreshToken: refresh_token,
@@ -161,6 +135,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         refresh_token: refreshToken,
       });
       const { access_token, refresh_token } = res.data.data;
+      // 是否落盘由"记住我"选择决定（tokenStore 内部判断）
       saveTokens(access_token, refresh_token);
       set({
         accessToken: access_token,

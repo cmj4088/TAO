@@ -20,3 +20,7 @@
 - `_get_llm_config(api_key, model, url)`：三级回退获取LLM配置
 
 **AI配置**：默认使用火山引擎Ark API，模型 `deepseek-v4-pro-260425`，temperature=0.1
+
+**2026-09-08 修改（v2.0.2 AI 用量统计）**：
+- `_call_ai_stream` 请求体新增 `stream_options.include_usage`；流末尾 usage 块 choices 为空，已加判空（修复 `choices[0]` 越界隐患）
+- 流正常结束后调用 `llm_usage.record_usage(None, "app01", model, ...)` 记录用量（APP01 无鉴权，记系统级）；无 usage 块时按字符数估算

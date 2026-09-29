@@ -1,0 +1,53 @@
+name: Frontend Electron Build & Release
+
+on:
+  push:
+    branches:
+      - main
+      - combined-test
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-release.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: 构建并打包
+        working-directory: ./frontend
+        run: npm run package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 上传构建产物（工作流存档）
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-installer
+          path: |
+            前端/*.exe
+            前端/*.yml
+            前端/*.blockmap
+          retention-days: 30

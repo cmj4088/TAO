@@ -28,3 +28,7 @@
 - `_check_known_typos()`：29组已知错别字模式匹配
 
 **SSE事件类型**：`reasoning`(思维链)、`token`(输出文本)、`done`(审查完成)、`error`(错误)
+
+**2026-09-08 修改（v2.0.2 AI 用量统计）**：
+- `_call_api_stream` 请求体新增 `stream_options.include_usage`；流末尾 usage 块 choices 为空，已加判空（修复 `choices[0]` 越界隐患）
+- 流正常结束后按 usage（无则字符估算）调用 `llm_usage.record_usage(user_id, "app02", model, ...)` 按用户记录用量

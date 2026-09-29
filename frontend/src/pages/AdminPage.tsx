@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react"
-import { Plus, Trash2, Zap, Shield, Key, ArrowLeft } from "lucide-react"
+import React, { useEffect, useRef, useState } from "react"
+import { Plus, Trash2, Zap, Shield, Key, ArrowLeft, HardDriveDownload, HardDriveUpload } from "lucide-react"
 import { useNavigate } from "react-router-dom"
+import axios from "axios"
 import { useAuthStore } from "@/stores/authStore"
-import client from "@/api/client"
+import client, { API_BASE } from "@/api/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -73,6 +74,69 @@ const AdminPage: React.FC = () => {
   const [editingKey, setEditingKey] = useState(false)
   const [newKey, setNewKey] = useState("")
   const [providerModalOpen, setProviderModalOpen] = useState(false)
+
+  // 数据备份与恢复
+  const backupFileRef = useRef<HTMLInputElement>(null)
+  const [pendingRestoreFile, setPendingRestoreFile] = useState<File | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+
+  // 带 Bearer 的独立 axios 调用（下载/上传走长超时，不走通用 client 的 JSON 头）
+  const authedConfig = () => ({
+    headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` },
+    timeout: 120000,
+  })
+
+  const handleExportBackup = async () => {
+    setExporting(true)
+    try {
+      const res = await axios.get(`${API_BASE}/api/admin/backup/export`, {
+        ...authedConfig(),
+        responseType: "blob",
+      })
+      // 从 Content-Disposition 取后端生成的文件名
+      const disposition = (res.headers["content-disposition"] as string) || ""
+      const match = disposition.match(/filename="([^"]+)"/)
+      const filename = match ? match[1] : "tao_backup.db"
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success(`备份已导出：${filename}`)
+    } catch {
+      toast.error("导出备份失败")
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleRestoreBackup = async () => {
+    if (!pendingRestoreFile) return
+    setRestoring(true)
+    try {
+      const form = new FormData()
+      form.append("file", pendingRestoreFile)
+      // 用裸 axios 发 multipart（通用 client 的 JSON Content-Type 会破坏 boundary）
+      await axios.post(`${API_BASE}/api/admin/backup/restore`, form, authedConfig())
+      toast.success("数据库已恢复，请重新登录")
+      // 恢复替换了整库，旧会话已失效 → 清除本地凭据回到登录页
+      localStorage.removeItem("access_token")
+      localStorage.removeItem("refresh_token")
+      navigate("/login")
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e) && e.response?.data?.detail) {
+        toast.error(`恢复失败：${e.response.data.detail}`)
+      } else {
+        toast.error("恢复失败，请确认上传的是有效的 .db 备份文件")
+      }
+    } finally {
+      setRestoring(false)
+      setPendingRestoreFile(null)
+      if (backupFileRef.current) backupFileRef.current.value = ""
+    }
+  }
 
   const loadUsers = async () => {
     setLoading(true)
@@ -392,6 +456,62 @@ const AdminPage: React.FC = () => {
           <Button onClick={handleSaveLlm} disabled={llmSaving}>
             {llmSaving ? "保存中..." : "保存配置"}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* 数据备份与迁移 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">数据备份与迁移</CardTitle>
+          <CardDescription>
+            导出全库备份（含全部账号、配置与数据）；换机或重装时上传恢复。
+            恢复会覆盖当前全部数据，且所有用户需重新登录。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-3">
+          <Button variant="outline" onClick={handleExportBackup} disabled={exporting}>
+            <HardDriveDownload className="mr-2 h-4 w-4" />
+            {exporting ? "导出中..." : "导出备份"}
+          </Button>
+
+          {/* 隐藏文件选择器，选中后弹确认框 */}
+          <input
+            ref={backupFileRef}
+            type="file"
+            accept=".db"
+            className="hidden"
+            onChange={(e) => setPendingRestoreFile(e.target.files?.[0] ?? null)}
+          />
+          <Button
+            variant="outline"
+            onClick={() => backupFileRef.current?.click()}
+            disabled={restoring}
+          >
+            <HardDriveUpload className="mr-2 h-4 w-4" />
+            {restoring ? "恢复中..." : "导入恢复"}
+          </Button>
+
+          {/* 恢复二次确认（覆盖全库，不可撤销） */}
+          <AlertDialog
+            open={!!pendingRestoreFile}
+            onOpenChange={(open) => !open && setPendingRestoreFile(null)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>确认恢复数据库？</AlertDialogTitle>
+                <AlertDialogDescription className="break-all">
+                  将使用 <b>{pendingRestoreFile?.name}</b> 覆盖当前全部数据（账号、配置、历史记录），
+                  此操作不可撤销。恢复成功后所有用户需重新登录。系统会先自动备份当前数据。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction onClick={handleRestoreBackup}>
+                  确认恢复
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
 

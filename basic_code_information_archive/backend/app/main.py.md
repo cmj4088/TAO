@@ -28,3 +28,6 @@
 - `app02.router` → 文件审查接口
 
 **扩展新App**：在 `REGISTERED_APPS` 列表中添加条目，然后 `app.include_router()` 注册路由。
+
+**2026-09-08 修改（v2.0.2）**：
+- 注册 `stats.router`（AI 用量统计接口）；VERSION 2.0.1 → 2.0.2

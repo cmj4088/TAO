@@ -53,7 +53,7 @@ const App02: React.FC = () => {
   const [aiReviewing, setAiReviewing] = useState(false)
   const {
     streamReasonings, streamFindings, streamExtractedInfo, streamStatus, streamPhase,
-    allDone, reset: resetStream,
+    allDone, connectionError, reset: resetStream,
   } = useAiReviewStream(aiTaskId)
 
   useEffect(() => {
@@ -65,6 +65,14 @@ const App02: React.FC = () => {
       setAiReviewPhase("done")
     }
   }, [allDone, streamFindings])
+
+  // SSE 连接失败（如登录过期、断流）时显式提示并结束加载状态，避免无限转圈
+  useEffect(() => {
+    if (connectionError) {
+      toast.error(connectionError)
+      setAiReviewing(false)
+    }
+  }, [connectionError])
 
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([])
   const [expandedStreams, setExpandedStreams] = useState<Set<string>>(new Set())

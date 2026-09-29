@@ -1,0 +1,20 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# 安装 LibreOffice（用于 .doc/.docx 文档转换）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice-writer \
+    && rm -rf /var/lib/apt/lists/*
+
+# 离线安装 Python 依赖（wheels/ 目录由主机 pip download 预先准备好，
+# 适用于无外网/无 DNS 的部署环境，与部署包"服务器无需联网"的定位一致）
+COPY requirements.txt .
+COPY wheels/ ./wheels/
+RUN pip install --no-cache-dir --no-index --find-links=/app/wheels -r requirements.txt
+
+COPY . .
+
+RUN mkdir -p /app/data
+EXPOSE 8002
+CMD ["gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8002"]

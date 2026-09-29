@@ -5,10 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
-from app.routers import settings, app01, app02
+from app.routers import settings, app01, app02, backup, stats
 from app.m1_auth.router import router as auth_router
 
-VERSION = "2.0.1"
+VERSION = "2.0.2"
 
 REGISTERED_APPS = [
     {"id": "app01", "name": "监考分配", "description": "自动分配监考员，支持拖拽调整"},
@@ -40,6 +40,8 @@ app.include_router(settings.router)
 app.include_router(app01.router)
 app.include_router(app02.router)
 app.include_router(auth_router)
+app.include_router(backup.router)
+app.include_router(stats.router)
 
 
 @app.get("/api/version")

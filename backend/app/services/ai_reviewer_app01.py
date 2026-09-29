@@ -34,12 +34,17 @@ def _call_ai_stream(prompt: str, api_key: str | None = None):
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
         "stream": True,
+        # 请求在流末尾附带 usage 统计块（OpenAI 兼容规范）
+        "stream_options": {"include_usage": True},
     }).encode("utf-8")
 
     req = urllib.request.Request(
         url, data=body,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
+
+    usage = None
+    completion_chars = 0
 
     try:
         with _opener.open(req, timeout=AI_TIMEOUT) as resp:
@@ -54,9 +59,14 @@ def _call_ai_stream(prompt: str, api_key: str | None = None):
                     if line.startswith(b"data: "):
                         try:
                             data = json.loads(line[6:])
-                            delta = data.get("choices", [{}])[0].get("delta", {})
+                            # 流末尾的 usage 统计块 choices 为空，需先判空再取 delta
+                            if data.get("usage"):
+                                usage = data["usage"]
+                            choices = data.get("choices") or []
+                            delta = choices[0].get("delta", {}) if choices else {}
                             content = delta.get("content", "")
                             if content:
+                                completion_chars += len(content)
                                 yield content
                         except json.JSONDecodeError:
                             continue
@@ -66,6 +76,17 @@ def _call_ai_stream(prompt: str, api_key: str | None = None):
         raise AiStreamError(f"无法连接 AI 服务：{e.reason}，请检查网络")
     except socket.timeout:
         raise AiStreamError(f"AI 调用超时（{AI_TIMEOUT}秒），请稍后重试")
+
+    # 流正常结束（无异常）才记录用量；APP01 接口无鉴权，user_id 记为空（系统级）
+    from app.services.llm_usage import record_usage, estimate_tokens
+    if usage:
+        record_usage(
+            None, "app01", model,
+            usage.get("prompt_tokens") or 0,
+            usage.get("completion_tokens") or 0,
+        )
+    else:
+        record_usage(None, "app01", model, estimate_tokens(prompt), estimate_tokens("x" * completion_chars))
 
 
 async def review_stream(

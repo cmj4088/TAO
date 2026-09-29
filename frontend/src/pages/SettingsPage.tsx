@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { Sun, Moon, Zap, Eye, EyeOff, BarChart3, Lock, Info, Shield, Trash2, User as UserIcon, Mail, Clock, ArrowLeft } from "lucide-react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { useSettingsStore } from "@/stores/settingsStore"
 import { useThemeStore, type ThemeColor } from "@/stores/themeStore"
 import { useAuthStore } from "@/stores/authStore"
@@ -43,8 +43,88 @@ const COLOR_OPTIONS: { value: ThemeColor; label: string; color: string }[] = [
   { value: "rose", label: "玫瑰粉", color: "bg-rose-500" },
 ]
 
+// AI 用量统计块（后端 /api/stats/ai-usage 返回结构）
+interface UsageBlock {
+  calls: number
+  total_tokens: number
+  prompt_tokens: number
+  completion_tokens: number
+  today: { calls: number; total_tokens: number }
+  by_model: { model: string; calls: number; total_tokens: number }[]
+  by_day: { date: string; calls: number; total_tokens: number }[]
+}
+
+// AI 用量面板：统计卡 + 按模型分布 + 近 7 天趋势
+const AiUsagePanel: React.FC<{ block: UsageBlock; title: string; desc?: string }> = ({ block, title, desc }) => {
+  const maxDayTokens = Math.max(1, ...block.by_day.map((d) => d.total_tokens))
+  return (
+    <div className="space-y-4">
+      {desc && <p className="text-xs text-muted-foreground">{desc}</p>}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs text-muted-foreground">累计调用</p>
+          <p className="text-lg font-semibold">{block.calls.toLocaleString()}</p>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs text-muted-foreground">今日调用</p>
+          <p className="text-lg font-semibold">{block.today.calls.toLocaleString()}</p>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs text-muted-foreground">累计 Tokens</p>
+          <p className="text-lg font-semibold">{block.total_tokens.toLocaleString()}</p>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs text-muted-foreground">今日 Tokens</p>
+          <p className="text-lg font-semibold">{block.today.total_tokens.toLocaleString()}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <p className="text-sm font-medium mb-2">{title}·按模型分布</p>
+          {block.by_model.length === 0 ? (
+            <p className="text-xs text-muted-foreground">暂无数据</p>
+          ) : (
+            <div className="space-y-2">
+              {block.by_model.map((m) => (
+                <div key={m.model} className="flex items-center justify-between text-sm">
+                  <Badge variant="secondary" className="max-w-[200px] truncate" title={m.model}>
+                    {m.model}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {m.calls} 次 · {m.total_tokens.toLocaleString()} tokens
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <p className="text-sm font-medium mb-2">{title}·近 7 天</p>
+          <div className="flex items-end gap-2 h-28">
+            {block.by_day.map((d) => (
+              <div key={d.date} className="flex-1 flex flex-col items-center gap-1" title={`${d.date}：${d.calls} 次 · ${d.total_tokens} tokens`}>
+                <div className="w-full flex items-end h-20">
+                  <div
+                    className="w-full rounded-t bg-primary/70"
+                    style={{ height: `${Math.max(2, (d.total_tokens / maxDayTokens) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-muted-foreground">{d.date.slice(5)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const SettingsPage: React.FC = () => {
   const navigate = useNavigate()
+  const location = useLocation()
+  // 数据统计区块锚点：首页"数据统计"卡片跳转 /settings#stats 时自动滚动到此
+  const statsSectionRef = useRef<HTMLDivElement>(null)
   const { app02AiConcurrency, setApp02AiConcurrency, loadApp02Settings, saveApp02Settings } = useSettingsStore()
   const { color, mode, setColor, setMode } = useThemeStore()
   const { user } = useAuthStore()
@@ -75,6 +155,10 @@ const SettingsPage: React.FC = () => {
   const [testingLlm, setTestingLlm] = useState(false)
   const [testResult, setTestResult] = useState<"success" | "fail" | null>(null)
 
+  // AI 用量统计 + 系统版本（关于系统展示用）
+  const [aiUsage, setAiUsage] = useState<{ me: UsageBlock; system: UsageBlock } | null>(null)
+  const [sysVersion, setSysVersion] = useState("")
+
   const loadLlmConfig = async () => {
     try {
       const res = await client.get("/api/auth/llm-config")
@@ -91,7 +175,24 @@ const SettingsPage: React.FC = () => {
   useEffect(() => {
     loadApp02Settings()
     loadLlmConfig()
+    // 拉取 AI 用量统计与系统版本，失败时保持占位展示
+    client.get("/api/stats/ai-usage").then(res => {
+      setAiUsage(res.data?.data || null)
+    }).catch(() => {})
+    client.get("/api/version").then(res => {
+      setSysVersion(res.data?.version || "")
+    }).catch(() => {})
   }, [])
+
+  // 带 #stats hash 进入时（首页数据统计卡跳转），等页面渲染完成后平滑滚动到数据统计区块
+  useEffect(() => {
+    if (location.hash === "#stats") {
+      const timer = setTimeout(() => {
+        statsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [location.hash])
 
   const handleSaveAi = async () => {
     try {
@@ -486,7 +587,8 @@ const SettingsPage: React.FC = () => {
 
       <Separator />
 
-      {/* 数据统计（占位） */}
+      {/* 数据统计（首页"数据统计"卡片通过 /settings#stats 定位到此处） */}
+      <div ref={statsSectionRef}>
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
@@ -503,6 +605,21 @@ const SettingsPage: React.FC = () => {
               <TabsTrigger value="invigilation">监考工作量</TabsTrigger>
             </TabsList>
             <TabsContent value="ai-usage" className="mt-4">
+              {aiUsage ? (
+                <div className="space-y-6">
+                  <AiUsagePanel
+                    block={aiUsage.me}
+                    title="我的用量"
+                    desc="统计你在文件审查（APP02）中的 AI 调用量"
+                  />
+                  <Separator />
+                  <AiUsagePanel
+                    block={aiUsage.system}
+                    title="系统级用量"
+                    desc="监考分配（APP01）等无用户归属的公共 AI 调用量"
+                  />
+                </div>
+              ) : (
                 <div className="h-64 flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
                     <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -510,7 +627,8 @@ const SettingsPage: React.FC = () => {
                     <p className="text-xs mt-1 opacity-60">使用文件审查功能后将自动生成统计</p>
                   </div>
                 </div>
-              </TabsContent>
+              )}
+            </TabsContent>
               <TabsContent value="review-stats" className="mt-4">
                 <div className="h-64 flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
@@ -532,6 +650,7 @@ const SettingsPage: React.FC = () => {
           </Tabs>
         </CardContent>
       </Card>
+      </div>
 
       {/* 关于系统 */}
       <Card>
@@ -546,7 +665,7 @@ const SettingsPage: React.FC = () => {
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">系统版本</Label>
-              <p>v0.2.1</p>
+              <p>{sysVersion ? `v${sysVersion}` : "—"}</p>
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">前端框架</Label>
@@ -558,7 +677,8 @@ const SettingsPage: React.FC = () => {
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">AI 模型</Label>
-              <p>DeepSeek V4</p>
+              {/* 实时显示当前配置的大模型名 */}
+              <p className="truncate max-w-[200px]" title={llmModel}>{llmModel || "未配置"}</p>
             </div>
           </div>
           <Separator />

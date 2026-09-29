@@ -785,7 +785,12 @@ async def _call_api_stream(api_key: str, prompt: str, user_id: str | None = None
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
         "stream": True,
+        # 请求在流末尾附带 usage 统计块（OpenAI 兼容规范）
+        "stream_options": {"include_usage": True},
     }
+
+    usage: dict | None = None
+    completion_chars = 0
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
         async with client.stream(
@@ -805,19 +810,36 @@ async def _call_api_stream(api_key: str, prompt: str, user_id: str | None = None
                     continue
                 data_str = line[6:]
                 if data_str == "[DONE]":
-                    return
+                    break
                 try:
                     chunk = json.loads(data_str)
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    # 流末尾的 usage 统计块 choices 为空，需先判空再取 delta
+                    if chunk.get("usage"):
+                        usage = chunk["usage"]
+                    choices = chunk.get("choices") or []
+                    delta = choices[0].get("delta", {}) if choices else {}
                     # 多模型思考字段兼容：DeepSeek/豆包/通义千问→reasoning_content，Claude→thinking，其他→reasoning
                     reasoning = delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "")
                     content = delta.get("content", "")
                     if reasoning:
+                        completion_chars += len(reasoning)
                         yield ("reasoning", reasoning)
                     if content:
+                        completion_chars += len(content)
                         yield ("token", content)
                 except json.JSONDecodeError:
                     continue
+
+    # 流正常结束（无异常）才记录用量；无 usage 块时按字符数粗略估算
+    from app.services.llm_usage import record_usage, estimate_tokens
+    if usage:
+        record_usage(
+            user_id, "app02", model,
+            usage.get("prompt_tokens") or 0,
+            usage.get("completion_tokens") or 0,
+        )
+    else:
+        record_usage(user_id, "app02", model, estimate_tokens(prompt), estimate_tokens("x" * completion_chars))
 
 
 async def review_stream(filepath: str, filename: str, api_key: str | None = None, user_id: str | None = None):
